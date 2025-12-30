@@ -8,6 +8,12 @@ A large fraction of day-to-day work in experimental HEP is not novel theory or a
 
 This benchmark evaluates whether an autonomous agent can reliably perform such tasks end-to-end under realistic constraints, rather than solving isolated coding puzzles. 
 
+## Run
+``` python
+uv run python main.py green  
+uv run python main.py launch   
+```
+
 ## What Is Being Evaluated
 
 The benchmark evaluates an agent along three dimensions:
