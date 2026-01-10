@@ -107,10 +107,10 @@ class HEPExGreenAgentExecutor(AgentExecutor):
         raise NotImplementedError
 
 
-def start_green_agent(host="localhost", port=9001):
+def start_green_agent(agent_name= "hepex_green_agent", host="localhost", port=9001):
     agent_card_dict = load_agent_card_toml("hepex_green_agent.toml")
     agent_card_dict["url"] = f"http://{host}:{port}"
-
+    
     request_handler = DefaultRequestHandler(
         agent_executor=HEPExGreenAgentExecutor(),
         task_store=InMemoryTaskStore(),
