@@ -52,25 +52,15 @@ class Agent:
             return env_dir
         return cfg.data_dir  # default
 
-    def _task_output_dir(self, base_dir: str, task: TaskSpec) -> str:
-        """
-        Make per-task dirs deterministic to avoid collisions across tasks/configs.
-        """
-        # Include max_files so different truncations don't share partial caches.
-        return os.path.join(
-            base_dir,
-            task.release,
-            task.dataset,
-            task.skim,
-            f"max_files={task.max_files}",
-        )
+    def _task_data_dir(self, base_dir: str, task: TaskSpec) -> Path:
+        # input ROOT cache
+        return Path(base_dir) / task.release / task.dataset / task.skim
+
     
     def _runs_root(self, base_data_dir: str) -> Path:
-        # runs 和 data 同级：如果你 base_data_dir 是 /tmp/atlas_data_cache
-        # 那 runs 会是 /tmp/atlas_data_cache/runs
         return Path(base_data_dir) / "runs"
 
-    def _task_run_dir(self, runs_root: Path, run_id: str, task_id: str) -> Path:
+    def _task_eval_dir(self, runs_root: Path, run_id: str, task_id: str) -> Path:
         return runs_root / run_id / task_id
     
 
@@ -122,8 +112,8 @@ class Agent:
         await updater.update_status(TaskState.working, new_agent_text_message("Starting tasks..."))
 
         overall: dict[str, Any] = {
-            "run_id": run_id,                              # NEW
-            "run_dir": str((runs_root / run_id).resolve()),# NEW
+            "run_id": run_id,                              
+            "run_dir": str((runs_root / run_id).resolve()),
             "data_dir": os.path.abspath(base_data_dir),
             "tasks": [],
             "score_total": 0.0,                 # sum of normalized per task
@@ -132,8 +122,8 @@ class Agent:
 
         # 3) Run tasks sequentially
         for idx, task in enumerate(cfg.tasks, start=1):
-            task_dir = self._task_run_dir(runs_root, run_id, task.id)  # NEW
-            task_dir.mkdir(parents=True, exist_ok=True)                # NEW
+            task_eval_dir = self._task_eval_dir(runs_root, run_id, task.id)  
+            task_eval_dir.mkdir(parents=True, exist_ok=True)                
 
             # NEW: meta skeleton (write early so crash still leaves trace)
             meta = {
@@ -148,7 +138,7 @@ class Agent:
                 "max_files": getattr(task, "max_files", None),
                 "reuse_existing": getattr(task, "reuse_existing", None),
             }
-            _safe_write_json(task_dir / "meta.json", meta)
+            _safe_write_json(task_eval_dir / "meta.json", meta)
 
             await updater.update_status(
                 TaskState.working,
@@ -158,24 +148,24 @@ class Agent:
             # 3a) Ensure data (optional)
             data_info: Optional[dict[str, Any]] = None
             if getattr(task, "needs_data", False):
-                task_dir = self._task_output_dir(base_data_dir, task)
-                os.makedirs(task_dir, exist_ok=True)
+                task_data_dir = self._task_data_dir(base_data_dir, task)
+                task_data_dir.mkdir(parents=True, exist_ok=True)
 
                 if data_info is not None:
-                    _safe_write_json(task_dir / "data_info.json", data_info)
+                    _safe_write_json(task_eval_dir / "data_info.json", data_info)
 
 
                 if not getattr(task, "reuse_existing", True):
                     # Force a clean re-download for this task configuration
                     try:
-                        shutil.rmtree(task_dir)
+                        shutil.rmtree(task_data_dir)
                     except FileNotFoundError:
                         pass
-                    os.makedirs(task_dir, exist_ok=True)
+                    os.makedirs(task_data_dir, exist_ok=True)
 
                 await updater.update_status(
                     TaskState.working,
-                    new_agent_text_message(f"[{task.id}] Ensuring data in {task_dir} ..."),
+                    new_agent_text_message(f"[{task.id}] Ensuring data in {task_data_dir} ..."),
                 )
 
                 try:
@@ -186,7 +176,7 @@ class Agent:
                         release=task.release,
                         dataset=task.dataset,
                         protocol=task.protocol,
-                        output_dir=task_dir,
+                        output_dir=task_data_dir,
                         max_files=task.max_files or 0,
                         workers=workers,
                         verbose=True,
@@ -218,7 +208,7 @@ class Agent:
 
             # 3b) Get submission trace
             submission_trace = await self._get_submission_trace(task, request, data_info)
-            _safe_write_json(task_dir / "submission_trace.json", submission_trace)
+            _safe_write_json(task_eval_dir / "submission_trace.json", submission_trace)
 
 
             # persist judge input snapshot (what engine sees)
@@ -227,7 +217,7 @@ class Agent:
                 "data_info": data_info,
                 "submission_trace": submission_trace,
             }
-            _safe_write_json(task_dir / "judge_input.json", judge_input)
+            _safe_write_json(task_eval_dir / "judge_input.json", judge_input)
 
             # 3c) Evaluate
             try:
@@ -238,7 +228,7 @@ class Agent:
                 )
             except Exception as e:
                 err_text = f"{type(e).__name__}: {e}"
-                _safe_write_text(task_dir / "engine_error.txt", err_text)
+                _safe_write_text(task_eval_dir / "engine_error.txt", err_text)
 
                 report = {
                     "task_id": task.id,
@@ -262,7 +252,7 @@ class Agent:
             overall["score_total"] += normalized
             overall["tasks"].append(report)
 
-            _safe_write_json(task_dir / "judge_output.json", report)
+            _safe_write_json(task_eval_dir / "judge_output.json", report)
 
             # update meta with score
             meta.update({
@@ -272,7 +262,7 @@ class Agent:
                 "finished_at": _utc_now_iso(),
                 "status": report.get("status", "ok"),
             })
-            _safe_write_json(task_dir / "meta.json", meta)
+            _safe_write_json(task_eval_dir / "meta.json", meta)
 
             summary = f"[{task.id}] {task.type}: score={total_score:.2f}/{max_score:.2f} (norm={normalized:.3f})"
             await updater.add_artifact(

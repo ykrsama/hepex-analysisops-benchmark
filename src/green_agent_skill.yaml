@@ -1,0 +1,43 @@
+id: host_assess_hepex_bench
+name: HEP-ex AnalysisOps assessment host
+description: >
+  Hosts and evaluates HEP-ex AnalysisOps benchmark tasks.
+  Accepts an EvalRequest (participants + config), runs tasks
+  in mock mode or by calling a white agent, scores submissions,
+  and emits per-task artifacts plus a final summary.
+
+tags:
+  - agentbeats
+  - benchmark
+  - evaluation
+  - green-agent
+  - hep
+  - analysisops
+  - atlas-open-data
+
+examples:
+  - |
+    Single-task mock evaluation (Z-peak)
+    {
+      "participants": {},
+      "config": {
+        "data_dir": "/tmp/atlas_data_cache",
+        "tasks": [
+          {
+            "id": "t001_zpeak_fit",
+            "type": "zpeak_fit",
+            "mode": "mock",
+            "needs_data": false,
+            "release": "2025e-13tev-beta",
+            "dataset": "data",
+            "skim": "2muons",
+            "protocol": "https",
+            "max_files": 1,
+            "reuse_existing": true,
+            "workflow_spec_path": "specs/zpeak_fit/workflow.yaml",
+            "rubric_path": "specs/zpeak_fit/rubric.yaml",
+            "judge_prompt_path": "specs/zpeak_fit/judge_prompt.md"
+          }
+        ]
+      }
+    }

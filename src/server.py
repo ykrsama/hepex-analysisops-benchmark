@@ -12,6 +12,16 @@ from a2a.types import (
 
 from executor import Executor
 
+import yaml
+from pathlib import Path
+HERE = Path(__file__).resolve().parent
+SKILL_YAML = HERE / "green_agent_skill.yaml"
+
+def load_skill_from_yaml(path: str) -> AgentSkill:
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+    return AgentSkill(**data)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run the A2A agent.")
@@ -23,19 +33,13 @@ def main():
     # Fill in your agent card
     # See: https://a2a-protocol.org/latest/tutorials/python/3-agent-skills-and-card/
     
-    skill = AgentSkill(
-        id="",
-        name="",
-        description="",
-        tags=[],
-        examples=[]
-    )
+    skill = load_skill_from_yaml(SKILL_YAML)
 
     agent_card = AgentCard(
-        name="",
-        description="",
+        name="hepex-green-agent",
+        description="Green (assessment) agent for the HEP-ex AnalysisOps benchmark on AgentBeats.", 
         url=args.card_url or f"http://{args.host}:{args.port}/",
-        version='1.0.0',
+        version="0.1.0",
         default_input_modes=['text'],
         default_output_modes=['text'],
         capabilities=AgentCapabilities(streaming=True),
