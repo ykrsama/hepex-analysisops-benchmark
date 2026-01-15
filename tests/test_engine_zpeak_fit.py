@@ -23,4 +23,5 @@ def test_engine_zpeak_fit_mock_scores_positive():
     report = evaluate_task(spec=spec, trace=trace)
 
     assert report["final"]["total_score"] > 0
-    assert report["final"]["max_score"] == 100
+    # 100 points from rule_checks + 20 points from llm_checks
+    assert report["final"]["max_score"] == 120

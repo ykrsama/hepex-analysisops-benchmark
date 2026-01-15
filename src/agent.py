@@ -356,6 +356,10 @@ class Agent:
                     "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
                 }
 
+            # Ensure task_id and type are always in the report
+            report["task_id"] = task.id
+            report["type"] = task.type
+
             # 3d) Normalize and accumulate
             final = report.setdefault("final", {})
             total_score = float(final.get("total_score", 0.0))

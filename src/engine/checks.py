@@ -31,16 +31,17 @@ CheckFn = Callable[[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, An
 
 def required_fields(cfg, trace, rubric, wf) -> CheckResult:
     required = cfg.get("required_fields", [])
+    pts = float(cfg.get("points", 0.0))  # Support points for rule_checks
     missing = [f for f in required if f not in trace]
     if missing:
         return CheckResult(
             passed=False,
             points=0.0,
-            max_points=0.0,
+            max_points=pts,
             issues=[{"severity":"error","code":"MISSING_FIELDS","message":f"Missing fields: {missing}"}],
             signals={"missing_fields": missing},
         )
-    return CheckResult(True, 0.0, 0.0, [], {})
+    return CheckResult(True, pts, pts, [], {})
 
 
 def numeric_in_range(cfg, trace, rubric, wf) -> CheckResult:

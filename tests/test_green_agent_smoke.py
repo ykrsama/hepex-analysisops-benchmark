@@ -87,7 +87,9 @@ async def test_green_agent_smoke(tmp_path, monkeypatch):
     (spec_dir / "rubric.yaml").write_text(yaml.dump({
         "total": 100,
         "gates": [{"id":"g1", "type":"required_fields", "required_fields":["status"]}],
-        "rule_checks": []
+        "rule_checks": [
+            {"id": "status_present", "type": "required_fields", "points": 100, "required_fields": ["status"]}
+        ]
     }))
 
     # Build a minimal platform request
