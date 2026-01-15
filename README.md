@@ -24,7 +24,7 @@ This benchmark evaluates whether an autonomous agent can reliably perform such t
 
 ## Data flow
 
-1. AgentBeats sends an `EvalRequest` JSON to `POST /...` (A2A message endpoint).
+1. AgentBeats sends an `EvalRequest` JSON the wihte agent using `SendMessageRequest`. 
 2. `src/agent.py` parses the request and loads `GreenConfig`.
 3. For each task:
    - Optional: download/cached data via `atlasopenmagic` (`utils/atlas_download.py`)

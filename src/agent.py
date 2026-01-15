@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 from typing import Any, Optional
+import json
 
 from pydantic import BaseModel, HttpUrl, ValidationError
 from a2a.server.tasks import TaskUpdater
@@ -10,14 +11,21 @@ from a2a.types import Message, TaskState, Part, TextPart, DataPart
 from a2a.utils import get_message_text, new_agent_text_message
 
 from messenger import Messenger
-from tasks.task_spec import GreenConfig, TaskSpec
+from tasks.task_spec import GreenConfig, TaskSpec, load_task_spec
 
 from utils import _utc_now_iso, _new_run_id, _safe_write_json, _safe_write_text
-from utils.atlas_download import ensure_atlas_open_data_downloaded  # <-- 用底层 ensure
-from engine.runner import run_engine_for_task
+from utils.atlas_download import ensure_atlas_open_data_downloaded  
+# from engine.runner import run_engine_for_task
+from engine.package_loader import load_spec_bundle
+from engine.prompt_render import _builtin_minimal_prompt
+from engine.package_loader import load_spec_bundle
+from engine.evaluator import evaluate_task
+from engine.llm_judge_gemini import GeminiJudge
+
 from utils.mock_traces import mock_trace_zpeak_fit, mock_trace_hyy
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
+
 
 
 class EvalRequest(BaseModel):
@@ -80,7 +88,67 @@ class Agent:
             return {"task_id": task.id, "status": "error", "error": f"Unknown task type: {task.type}"}
 
         # Future: call white agent
-        return {"task_id": task.id, "status": "error", "error": "call_white not implemented yet"}
+        # return {"task_id": task.id, "status": "error", "error": "call_white not implemented yet"}
+
+        # ---- call_white path ----
+        bundle = load_spec_bundle(task)
+        # 1) prepare white prompt
+        if bundle.get("white_prompt"):
+            prompt = bundle["white_prompt"]
+        else:
+            prompt = _builtin_minimal_prompt(task.id, task.type)
+
+        # optional: simple templating
+        prompt = (
+            prompt
+            .replace("{{TASK_ID}}", task.id)
+            .replace("{{MAX_FILES}}", str(task.max_files))
+        )
+
+        # 2) prepare data payload
+        files = []
+        if data_info:
+            # adapt this key if needed
+            files = data_info.get("local_paths", [])
+
+        payload = {
+            "role": "task_request",
+            "task_id": task.id,
+            "task_type": task.type,
+            "prompt": prompt,
+            "data": {
+                "files": files[: task.max_files],
+                "release": task.release,
+                "dataset": task.dataset,
+                "skim": task.skim,
+            },
+            "constraints": getattr(task, "constraints", {}),
+        }
+
+        message_str = json.dumps(payload, indent=2)
+
+        # 3) send to white agent
+        white_url = str(request.participants["white_agent"])
+
+        response_str = await self.messenger.talk_to_agent(
+            message=message_str,
+            url=white_url,
+            new_conversation=True,   # IMPORTANT: new task = new conversation
+        )
+
+        # 4) parse response
+        try:
+            submission_trace = json.loads(response_str)
+        except json.JSONDecodeError as e:
+            return {
+                "task_id": task.id,
+                "status": "error",
+                "error": f"White agent returned non-JSON response: {e}",
+                "raw_response": response_str[:1000],
+            }
+
+        return submission_trace
+
 
     async def run(self, message: Message, updater: TaskUpdater) -> None:
         input_text = get_message_text(message)
@@ -121,7 +189,8 @@ class Agent:
         }
 
         # 3) Run tasks sequentially
-        for idx, task in enumerate(cfg.tasks, start=1):
+        task_specs = [load_task_spec(d) for d in cfg.task_dirs]
+        for idx, task in enumerate(task_specs, start=1):
             task_eval_dir = self._task_eval_dir(runs_root, run_id, task.id)  
             task_eval_dir.mkdir(parents=True, exist_ok=True)                
 
@@ -221,10 +290,28 @@ class Agent:
 
             # 3c) Evaluate
             try:
-                report = run_engine_for_task(
-                    task_spec=task,
-                    data_info=data_info,
-                    submission_trace=submission_trace,
+                # report = run_engine_for_task(
+                #     task_spec=task,
+                #     data_info=data_info,
+                #     submission_trace=submission_trace,
+                # )
+
+                bundle = load_spec_bundle(task)  # {"rubric":..., "eval_ref":..., "judge_prompt":..., "white_prompt":...}
+                spec = {
+                    # keep task metadata if you want to log/debug
+                    "task": task.model_dump(),
+                    # what evaluator needs
+                    "rubric": bundle["rubric"],
+                    "eval_ref": bundle.get("eval_ref", {}) or {},
+                    "judge_prompt": bundle.get("judge_prompt"),   # may be None
+                }
+
+                # decide whether to use gemini 
+                gemini = self.gemini_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
+                report = evaluate_task(
+                    spec=spec,
+                    trace=submission_trace,
+                    gemini=gemini,
                 )
             except Exception as e:
                 err_text = f"{type(e).__name__}: {e}"

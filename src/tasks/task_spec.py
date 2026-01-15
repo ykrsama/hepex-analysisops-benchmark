@@ -1,51 +1,56 @@
 from __future__ import annotations
-from typing import Literal, Union
+
+from pathlib import Path
+from typing import Any, Literal, Optional
+
+import yaml
 from pydantic import BaseModel, Field
 
-class ZPeakFitTaskSpec(BaseModel):
-    # --- task identity ---
-    id: str = "t001_zpeak_fit"
-    type: Literal["zpeak_fit"] = "zpeak_fit"
+
+class TaskSpec(BaseModel):
+    # identity
+    id: str
+    type: str
     mode: Literal["mock", "call_white"] = "mock"
 
-    # --- data requirements ---
+    # execution/data requirements
     needs_data: bool = True
     release: str = "2025e-13tev-beta"
     dataset: str = "data"
-    skim: str = "2muons"
-    protocol: str = "https"
-    max_files: int = 3
-    cache: bool = True # reserved for future use
-    reuse_existing: bool = True  
-
-    # --- workflow & evaluation ---
-    workflow_spec_path: str = "specs/zpeak_fit/workflow.yaml"
-    rubric_path: str = "specs/zpeak_fit/rubric.yaml"
-    judge_prompt_path: str = "specs/zpeak_fit/judge_prompt.md"
-
-class HyyAnalysisTaskSpec(BaseModel):
-    # --- task identity ---
-    id: str = "t002_hyy"
-    type: Literal["hyy_analysis"] = "hyy_analysis"
-    mode: Literal["mock", "call_white"] = "mock"
-
-    # --- data requirements ---
-    needs_data: bool = True
-    release: str = "2025e-13tev-beta"
-    dataset: str = "data"
-    skim: str = "2photons"
+    skim: str
     protocol: str = "https"
     max_files: int = 3
     cache: bool = True
     reuse_existing: bool = True
 
-    # --- workflow & evaluation ---
-    workflow_spec_path: str = "specs/hyy/workflow.yaml"
-    rubric_path: str = "specs/hyy/rubric.yaml"
-    judge_prompt_path: str = "specs/hyy/judge_prompt.md"
+    # evaluation specs (relative to spec_dir by default)
+    spec_dir: str
+    rubric_path: str = "rubric.yaml"
+    judge_prompt_path: str = "judge_prompt.md"
+    eval_ref_path: Optional[str] = "eval_ref.yaml"
 
-TaskSpec = Union[ZPeakFitTaskSpec, HyyAnalysisTaskSpec]
+    # (optional) for white agent request description
+    description: Optional[str] = None
+    constraints: dict[str, Any] = Field(default_factory=dict)
+
+    def resolve_path(self, rel: str | None) -> Optional[Path]:
+        if not rel:
+            return None
+        p = Path(self.spec_dir) / rel
+        return p
+
 
 class GreenConfig(BaseModel):
     data_dir: str = "/tmp/atlas_data_cache"
-    tasks: list[TaskSpec] = Field(default_factory=lambda: [ZPeakFitTaskSpec(), HyyAnalysisTaskSpec()])
+    task_dirs: list[str] = Field(default_factory=lambda: ["specs/zpeak_fit", "specs/hyy"])
+
+
+def load_task_spec(spec_dir: str | Path) -> TaskSpec:
+    spec_dir = str(spec_dir)
+    path = Path(spec_dir) / "task_spec.yaml"
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+    # enforce spec_dir from directory (source of truth)
+    data["spec_dir"] = spec_dir
+
+    return TaskSpec.model_validate(data)
