@@ -1,0 +1,24 @@
+{
+  "task_id": "t001_zpeak_fit",
+  "status": "ok",
+  "fit_result": {
+    "mu": 90.753,
+    "sigma": 2.276,
+    "gof": {
+      "p_value": null,
+      "chi2_ndof": null
+    }
+  },
+  "fit_method": {
+    "model": "gauss_plus_const",
+    "fit_range": [
+      70.0,
+      110.0
+    ],
+    "binned_or_unbinned": "binned",
+    "optimizer": "scipy.curve_fit",
+    "initial_params": null,
+    "uncertainties_method": "covariance"
+  },
+  "comments": "Successfully fitted the Z peak. I chose the 'gauss_plus_const' model because it provides a reasonable fit to the peak with a simple background. The fit range [70, 110] GeV was chosen to be centered around the expected Z peak mass of 91 GeV. I am taking the two leading-pt muons to reconstruct the di-muon invariant mass."
+}

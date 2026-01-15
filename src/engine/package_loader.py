@@ -34,13 +34,25 @@ def _has_llm_checks(rubric: Dict[str, Any]) -> bool:
     return isinstance(llm_checks, list) and len(llm_checks) > 0
 
 
-def load_spec_bundle(task: Any) -> SpecBundle:
-    spec_dir = getattr(task, "spec_dir", None) or task["spec_dir"]
+def _safe_get(obj: Any, key: str, default: Any = None) -> Any:
+    """Get attribute from object, supporting both Pydantic models and dicts."""
+    val = getattr(obj, key, None)
+    if val is not None:
+        return val
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return default
 
-    rubric_rel = getattr(task, "rubric_path", None) or task.get("rubric_path", "rubric.yaml")
-    prompt_rel = getattr(task, "judge_prompt_path", None) or task.get("judge_prompt_path", "judge_prompt.md")
-    eval_ref_rel = getattr(task, "eval_ref_path", None) or task.get("eval_ref_path", "eval_ref.yaml")
-    white_prompt_rel = getattr(task, "white_prompt_path", None) or task.get("white_prompt_path", "white_prompt.md")
+
+def load_spec_bundle(task: Any) -> SpecBundle:
+    spec_dir = _safe_get(task, "spec_dir")
+    if spec_dir is None:
+        raise ValueError("task must have 'spec_dir' attribute")
+
+    rubric_rel = _safe_get(task, "rubric_path", "rubric.yaml")
+    prompt_rel = _safe_get(task, "judge_prompt_path", "judge_prompt.md")
+    eval_ref_rel = _safe_get(task, "eval_ref_path", "eval_ref.yaml")
+    white_prompt_rel = _safe_get(task, "white_prompt_path", "white_prompt.md")
 
     # rubric required
     rubric_path = _resolve_path(spec_dir, rubric_rel)

@@ -8,7 +8,8 @@ release: 2025e-13tev-beta
 dataset: data
 skim: 2muons
 protocol: https
-max_files: 3
+max_files: 1
+workers: 1
 cache: true
 reuse_existing: true
 

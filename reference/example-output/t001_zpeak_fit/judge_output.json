@@ -1,0 +1,54 @@
+{
+  "status": "ok",
+  "hard_checks_passed": true,
+  "hard_failures": [],
+  "final": {
+    "total_score": 100.0,
+    "max_score": 100.0,
+    "normalized_score": 1.0
+  },
+  "rule": {
+    "score": 85.0
+  },
+  "llm": {
+    "score": 17.0,
+    "meta": {
+      "method_reasoning": {
+        "raw": 85.0,
+        "confidence": 1.0,
+        "cap": 20.0,
+        "contrib": 17.0,
+        "explanation": "The method description is clear and provides a reasonable justification for the chosen model and fit range. The explanation of using leading-pt muons is also helpful. However, the description could be improved by providing more details on the initial parameter values and the rationale behind them."
+      }
+    }
+  },
+  "issues": [
+    {
+      "severity": "info",
+      "code": "THRESHOLD_MISSING",
+      "message": "Missing value/threshold; partial credit"
+    },
+    {
+      "severity": "warn",
+      "code": "REQUIRED_KEYS_MISSING",
+      "message": "Missing keys: ['initial_params']"
+    },
+    {
+      "severity": "info",
+      "message": "Missing p-value in fit result.",
+      "evidence": "fit_result.gof.p_value"
+    },
+    {
+      "severity": "warn",
+      "message": "Missing 'initial_params' in fit_method.",
+      "evidence": "fit_method"
+    }
+  ],
+  "signals": {
+    "fit_result.mu": 90.753,
+    "fit_result.sigma": 2.276,
+    "missing_keys": [
+      "initial_params"
+    ]
+  }
+}

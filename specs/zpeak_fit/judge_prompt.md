@@ -5,6 +5,7 @@ Return JSON:
 {
   "dimension_scores": {"method_reasoning": number},
   "confidence": number,
+  "explanation": "Brief comment on why this score was given",
   "notes": [{"severity":"info|warn|error","message":"...","evidence":"..."}]
 }
 

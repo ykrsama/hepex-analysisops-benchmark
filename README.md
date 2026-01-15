@@ -1,57 +1,131 @@
-# HEPEx AnalysisOps Benchmark
+# HEPEx AnalysisOps Benchmark (Green Agent)
 
-A benchmark for evaluating autonomous research agents on realistic high-energy physics (HEP) analysis workflows, including data processing, statistical fitting, and result validation.
+[![Test and Publish Agent](https://github.com/ranriver/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml/badge.svg)](https://github.com/ranriver/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml)
 
-## Abstract
-This benchmark evaluates an autonomous agent's ability to perform end-to-end physics analyses using ATLAS Open Data. The Green Agent currently supports **seven** tasks:
+> **AgentBeats Green Agent** for evaluating autonomous agents on high-energy physics (HEP) analysis workflows.
 
-1.  **Z Boson Resonance Fit (`zpeak_fit`)**: Extract Z mass and width from muon pairs.
-2.  **Higgs to Diphoton Analysis (`hyy`)**: Measure Higgs mass using high-resolution diphoton events.
-3.  **H->mumu (VBF) (`hmumu`)**: Search for the rare Higgs decay to muons using VBF topology selection.
-4.  **H->bb (0-lepton) (`hbb`)**: Identify Higgs to b-quark pairs in the high-MET VH channel.
-5.  **H->ZZ->4l (`hzz`)**: Rediscover the "Golden Channel" Higgs decay to four leptons.
-6.  **Top Pair Production (`ttbar`)**: Reconstruct the top quark mass in the semileptonic decay channel.
-7.  **WZ Diboson (`wz3l`)**: Analyze WZ production in the 3-lepton final state.
+## Overview
 
-The benchmark focuses on "AnalysisOps"—the structured, repetitive, yet critical operations of maintaining analysis code, running fits, and validating results—rather than purely novel algorithm design.
+This benchmark evaluates an agent's ability to perform end-to-end physics analyses using [ATLAS Open Data](https://opendata.atlas.cern/). It serves as the **Green Agent** (assessor) in the [AgentBeats](https://agentbeats.dev) ecosystem.
 
-## Features
-*   **Green Agent Implementation**: Fully compliant with the [Agent2Agent (A2A) Protocol](https://a2a-protocol.org), serving as an orchestrator and evaluator.
-*   **Realistic Physics Tasks**: Uses real ATLAS Open Data (13 TeV) and standard ROOT/Python ecosystems (uproot, iminuit).
-*   **Deterministic Evaluation**: The evaluation engine uses strict, deterministic rule checks defined in YAML rubrics to ensure fair and reproducible scoring.
-*   **Mock & White Agent Support**: robust support for developing against mock traces or connecting real "White Agents" via A2A.
-*   **Extensible Architecture**: New tasks can be added by defining 5 specification files (TaskSpec, Rubric, EvalRef, WhitePrompt, JudgePrompt).
+### Supported Tasks
 
-## Reproducibility
-The benchmark prioritizes reproducibility in agent evaluation. The scoring engine is designed to be deterministic for rule-based checks.
-*   **Verification**: Multiple runs of the evaluation engine with the same submission trace produce bitwise identical score reports.
-*   **Artifacts**: All intermediary inputs (judge input) and outputs (score report) are persisted as JSON artifacts for auditability.
-*   **Isolation**: Each task runs in its own isolated directory structure to prevent state leakage.
+| Task | Description |
+|------|-------------|
+| `zpeak_fit` | Extract Z mass and width from muon pairs |
+| `hyy` | Measure Higgs mass using diphoton events |
+| `hmumu` | Search for H→μμ using VBF topology |
+| `hbb` | Identify H→bb in 0-lepton VH channel |
+| `hzz` | Analyze H→ZZ→4l "Golden Channel" |
+| `ttbar` | Reconstruct top quark mass |
+| `wz3l` | Analyze WZ diboson in 3-lepton final state |
 
----
+## Quick Start
+
+### Docker Image
+
+```bash
+# Pull from GHCR
+docker pull ghcr.io/ranriver/hepex-analysisops-benchmark:latest
+
+# Or build locally
+docker build -t hepex-green-agent:local .
+
+# Run (listens on port 9009)
+docker run -p 9009:9009 ghcr.io/ranriver/hepex-analysisops-benchmark:latest
+```
+
+### Local Development
+
+```bash
+# Install dependencies
+uv sync
+
+# Run the agent
+uv run src/server.py --host 0.0.0.0 --port 9009
+```
+
+## Local Reproduction
+
+Test the full benchmark locally with a Purple Agent:
+
+```bash
+# Set API keys
+export GOOGLE_API_KEY="..."
+
+# Run the reproduction script
+uv run scripts/reproduce_locally.py --local
+```
+
+This generates a `docker-compose.yml` and runs both agents in isolated containers. Results are saved to `./output/`.
+
+## AgentBeats Integration
+
+### Agent Card
+
+- **Name**: `hepex-green-agent`
+- **Port**: 9009 (A2A standard)
+- **Protocol**: A2A (Agent-to-Agent)
+
+### EvalRequest Format
+
+```json
+{
+  "participants": {
+    "white_agent": "http://purple-agent:9009/"
+  },
+  "config": {
+    "task_dirs": ["specs/zpeak_fit"],
+    "data_dir": "/home/agent/output"
+  }
+}
+```
+
+### Output Artifacts
+
+Each evaluation run produces:
+
+```
+output/
+├── runs/<run_id>/<task_id>/
+│   ├── meta.json              # Task metadata
+│   ├── submission_trace.json  # Agent response
+│   ├── judge_input.json       # Evaluator input
+│   └── judge_output.json      # Scored result
+└── <release>/<dataset>/<skim>/  # Cached data files
+```
 
 ## Architecture
 
-### Roles
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      AgentBeats Platform                     │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼ EvalRequest
+┌─────────────────────────────────────────────────────────────┐
+│                  Green Agent (This Repo)                     │
+│  ┌──────────────┐  ┌──────────┐  ┌─────────────────────┐    │
+│  │ Task Loader  │→ │ Data Mgr │→ │ Evaluation Engine   │    │
+│  └──────────────┘  └──────────┘  └─────────────────────┘    │
+│         │                               ▲                    │
+│         ▼ A2A                           │ trace              │
+│  ┌──────────────────────────────────────┴────────┐          │
+│  │              Purple Agent (External)           │          │
+│  └────────────────────────────────────────────────┘          │
+└─────────────────────────────────────────────────────────────┘
+```
 
-- **Green agent (this repo)**  
-  Orchestrates tasks, optionally downloads data, collects submissions (mock or from white agent), evaluates them, and reports artifacts.
+## Reproducibility
 
-- **White agent (future / external)**  
-  Performs the actual physics analysis and returns a **structured submission trace** (cuts, cutflow, fit metadata, artifacts, etc.).
-
----
-
-## Data flow
-
-1. AgentBeats sends an `EvalRequest` JSON. 
-2. Green Agent (`src/agent.py`) parses request and loads configuration.
-3. For each task:
-   - **Data Prep**: Caches ATLAS Open Data via `atlasopenmagic`.
-   - **Execution**: Sends prompt to White Agent (or uses mock).
-   - **Evaluation**: Scores the submission trace against `rubric.yaml` using `src/engine/evaluator.py`.
-   - **Reporting**: Updates status and artifacts via A2A.
+- **Deterministic Scoring**: Rule-based checks produce identical scores for identical traces
+- **Artifact Persistence**: All inputs and outputs saved as JSON for audit
+- **Isolation**: Each task runs in its own directory
 
 ## Attribution
 
 This benchmark uses **ATLAS Open Data** released under the CERN Open Data policy.
+
+## License
+
+See [LICENSE](LICENSE) for details.

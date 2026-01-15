@@ -4,6 +4,7 @@ import os
 import shutil
 from typing import Any, Optional
 import json
+import logging
 
 from pydantic import BaseModel, HttpUrl, ValidationError
 from a2a.server.tasks import TaskUpdater
@@ -25,6 +26,7 @@ from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
 
+logger = logging.getLogger(__name__)
 
 class EvalRequest(BaseModel):
     participants: dict[str, HttpUrl]  # role -> agent URL
@@ -135,9 +137,24 @@ class Agent:
             new_conversation=True,   # IMPORTANT: new task = new conversation
         )
 
-        # 4) parse response
+        # 4) parse response - handle markdown code blocks
+        def extract_json_from_response(text: str) -> str:
+            """Extract JSON from response, handling markdown code blocks."""
+            # Try to find JSON in markdown code block
+            import re
+            # Match ```json...``` or ```...``` blocks
+            code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+            if code_block_match:
+                return code_block_match.group(1).strip()
+            # Try to find raw JSON object
+            json_match = re.search(r'(\{[\s\S]*\})', text)
+            if json_match:
+                return json_match.group(1)
+            return text
+        
         try:
-            submission_trace = json.loads(response_str)
+            json_text = extract_json_from_response(response_str)
+            submission_trace = json.loads(json_text)
         except json.JSONDecodeError as e:
             return {
                 "task_id": task.id,
@@ -156,6 +173,9 @@ class Agent:
         try:
             request: EvalRequest = EvalRequest.model_validate_json(input_text)
             ok, msg = self.validate_request(request)
+            # update, show received request
+            logger.info(f"Received request: {request}")
+            await updater.update_status(TaskState.working, new_agent_text_message(f"Received request: {request}"))
             if not ok:
                 await updater.reject(new_agent_text_message(msg))
                 return
@@ -166,6 +186,10 @@ class Agent:
         # 2) Parse green config
         try:
             cfg = GreenConfig.model_validate(request.config)
+            # update, show received config
+            logger.info(f"Received config: {cfg}")
+            await updater.update_status(TaskState.working, new_agent_text_message(f"Received config: {cfg}"))
+            
         except ValidationError as e:
             await updater.reject(new_agent_text_message(f"Invalid config: {e}"))
             return
@@ -212,6 +236,7 @@ class Agent:
                 TaskState.working,
                 new_agent_text_message(f"Task {idx}/{len(cfg.task_dirs)}: {task.type} ({task.id})"),
             )
+            logger.info(f"Starting Task {idx}/{len(cfg.task_dirs)}: {task.type} ({task.id})")
 
             # 3a) Ensure data (optional)
             data_info: Optional[dict[str, Any]] = None
@@ -221,6 +246,8 @@ class Agent:
 
                 if data_info is not None:
                     _safe_write_json(task_eval_dir / "data_info.json", data_info)
+
+                logger.debug(f"Data info for task {task.id}: {data_info}")
 
 
                 if not getattr(task, "reuse_existing", True):
@@ -235,6 +262,7 @@ class Agent:
                     TaskState.working,
                     new_agent_text_message(f"[{task.id}] Ensuring data in {task_data_dir} ..."),
                 )
+                logger.info(f"[{task.id}] Ensuring data in {task_data_dir} ...")
 
                 try:
                     # NOTE: workers not in TaskSpec -> pick a sane default or read env
@@ -275,7 +303,15 @@ class Agent:
                 )
 
             # 3b) Get submission trace
-            submission_trace = await self._get_submission_trace(task, request, data_info)
+            try:
+                submission_trace = await self._get_submission_trace(task, request, data_info)
+            except Exception as e:
+                submission_trace = {
+                    "task_id": task.id,
+                    "status": "error",
+                    "error": f"Failed to get submission trace: {type(e).__name__}: {e}",
+                }
+            
             _safe_write_json(task_eval_dir / "submission_trace.json", submission_trace)
 
 
@@ -291,12 +327,13 @@ class Agent:
             try:
 
                 bundle = load_spec_bundle(task)  # {"rubric":..., "eval_ref":..., "judge_prompt":..., "white_prompt":...}
+                eval_ref = bundle.get("eval_ref", {}) or {}
                 spec = {
                     # keep task metadata if you want to log/debug
                     "task": task.model_dump(),
                     # what evaluator needs
                     "rubric": bundle["rubric"],
-                    "eval_ref": bundle.get("eval_ref", {}) or {},
+                    "eval_ref": eval_ref,
                     "judge_prompt": bundle.get("judge_prompt"),   # may be None
                 }
 
@@ -346,6 +383,7 @@ class Agent:
             _safe_write_json(task_eval_dir / "meta.json", meta)
 
             summary = f"[{task.id}] {task.type}: score={total_score:.2f}/{max_score:.2f} (norm={normalized:.3f})"
+            logger.info(summary)
             await updater.add_artifact(
                 parts=[Part(root=TextPart(text=summary)), Part(root=DataPart(data=report))],
                 name=f"Result-{task.id}",

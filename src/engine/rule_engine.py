@@ -17,7 +17,7 @@ class RuleReport:
 
 def evaluate_rules(spec: Dict[str, Any], trace: Dict[str, Any]) -> RuleReport:
     rubric = spec["rubric"]
-    wf = spec.get("workflow_ref", {}) or {}
+    eval_ref = spec.get("eval_ref", {}) or {}
     total_max = float(rubric.get("total", 100))
 
     issues: List[Dict[str, Any]] = []
@@ -33,7 +33,7 @@ def evaluate_rules(spec: Dict[str, Any], trace: Dict[str, Any]) -> RuleReport:
             continue
         g2 = dict(g)
         g2["gate"] = True
-        res: CheckResult = fn(g2, trace, rubric, wf)
+        res: CheckResult = fn(g2, trace, rubric, eval_ref)
         issues.extend(res.issues)
         signals.update(res.signals)
         if res.passed is False:
@@ -58,11 +58,11 @@ def evaluate_rules(spec: Dict[str, Any], trace: Dict[str, Any]) -> RuleReport:
         if fn is None:
             issues.append({"severity":"error","code":"UNKNOWN_CHECK_TYPE","message":f"Unknown rule check type: {ctype}"})
             continue
-        res: CheckResult = fn(rc, trace, rubric, wf)
+        res: CheckResult = fn(rc, trace, rubric, eval_ref)
         score += float(res.points)
         max_score += float(res.max_points)
         issues.extend(res.issues)
         signals.update(res.signals)
 
     # 规则分如果没凑到 total，可以不强行缩放；也可以选择缩放到 total（看你偏好）
-    return RuleReport(True, [], score, total_max, issues, signals)
+    return RuleReport(True, [], score, max_score, issues, signals)

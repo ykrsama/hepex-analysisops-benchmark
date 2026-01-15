@@ -9,13 +9,14 @@ def pretty(obj: Any) -> str:
 def render_judge_prompt(template: str,
                         *,
                         rubric: Dict[str, Any],
-                        workflow_ref: Dict[str, Any],
+                        eval_ref: Dict[str, Any],
                         trace: Dict[str, Any],
                         rule_signals: Dict[str, Any],
                         rule_issues: List[Dict[str, Any]]) -> str:
     return (template
             .replace("{{RUBRIC}}", pretty(rubric))
-            .replace("{{WORKFLOW_REF}}", pretty(workflow_ref))
+            .replace("{{EVAL_REF}}", pretty(eval_ref))
+            .replace("{{WORKFLOW_REF}}", pretty(eval_ref))  # backward compat
             .replace("{{SUBMISSION_TRACE}}", pretty(trace))
             .replace("{{RULE_SIGNALS}}", pretty(rule_signals))
             .replace("{{RULE_ISSUES}}", pretty(rule_issues)))

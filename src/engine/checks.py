@@ -26,7 +26,7 @@ class CheckResult:
     signals: Dict[str, Any]
 
 CheckFn = Callable[[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]], CheckResult]
-# (check_cfg, trace, rubric, workflow_ref) -> CheckResult
+# (check_cfg, trace, rubric, eval_ref) -> CheckResult
 
 
 def required_fields(cfg, trace, rubric, wf) -> CheckResult:

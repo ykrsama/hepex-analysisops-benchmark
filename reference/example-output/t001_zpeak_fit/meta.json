@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-01-15T17:31:28.037537+00:00",
+  "task_id": "t001_zpeak_fit",
+  "task_type": "zpeak_fit",
+  "mode": "call_white",
+  "release": "2025e-13tev-beta",
+  "dataset": "data",
+  "skim": "2muons",
+  "protocol": "https",
+  "max_files": 1,
+  "reuse_existing": true,
+  "score_total": 100.0,
+  "score_max": 100.0,
+  "normalized_score": 1.0,
+  "finished_at": "2026-01-15T17:31:39.514261+00:00",
+  "status": "ok"
+}

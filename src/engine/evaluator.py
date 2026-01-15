@@ -69,23 +69,39 @@ def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, gemini: Option
             contrib = clamp(contrib, 0.0, cap)
 
             llm_score += contrib
-            llm_meta[lc.get("id","method_reasoning")] = {"raw": raw, "confidence": conf, "cap": cap, "contrib": contrib}
+            llm_meta[lc.get("id","method_reasoning")] = {
+                "raw": raw, 
+                "confidence": conf, 
+                "cap": cap, 
+                "contrib": contrib,
+                "explanation": obj.get("explanation", "")
+            }
 
             notes = obj.get("notes", [])
             if isinstance(notes, list):
                 llm_issues.extend([n for n in notes if isinstance(n, dict)])
 
-    # 3) final merge (simple add; llm has cap per check already)
-    total = float(rule.rule_score) + float(llm_score)
-    total = clamp(total, 0.0, total_max)
+    # 3) final merge
+    # Calculate LLM max possible score
+    llm_max = sum(float(lc.get("points", 0.0)) for lc in llm_checks)
+
+    total_score = float(rule.rule_score) + float(llm_score)
+    final_max = float(rule.rule_max) + llm_max
+    
+    # Do NOT clamp total to a fixed value. It should be capped by final_max naturally if logic is correct.
+    total_score = clamp(total_score, 0.0, final_max)
 
     return {
         "status": "ok",
         "hard_checks_passed": True,
         "hard_failures": [],
-        "final": {"total_score": total, "max_score": total_max, "normalized_score": total / max(1e-9, total_max)},
-        "rule": {"score": rule.rule_score},
-        "llm": {"score": llm_score, "meta": llm_meta},
+        "final": {
+            "total_score": total_score, 
+            "max_score": final_max, 
+            "normalized_score": total_score / max(1e-9, final_max)
+        },
+        "rule": {"score": rule.rule_score, "max": rule.rule_max},
+        "llm": {"score": llm_score, "max": llm_max, "meta": llm_meta},
         "issues": rule.issues + llm_issues,
         "signals": rule.signals,
     }

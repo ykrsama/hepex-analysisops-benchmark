@@ -1,0 +1,76 @@
+{
+  "task_spec": {
+    "id": "t001_zpeak_fit",
+    "type": "zpeak_fit",
+    "mode": "call_white",
+    "needs_data": true,
+    "release": "2025e-13tev-beta",
+    "dataset": "data",
+    "skim": "2muons",
+    "protocol": "https",
+    "max_files": 1,
+    "cache": true,
+    "reuse_existing": true,
+    "spec_dir": "/tmp/pytest-of-ranriver/pytest-44/e2e_integration0/specs/zpeak_fit",
+    "rubric_path": "rubric.yaml",
+    "judge_prompt_path": "judge_prompt.md",
+    "eval_ref_path": "eval_ref.yaml",
+    "description": "Build m_mumu and fit around Z peak.",
+    "constraints": {
+      "allow_network": false,
+      "memory_gb": 8,
+      "time_limit_sec": 600
+    }
+  },
+  "data_info": {
+    "release": "2025e-13tev-beta",
+    "dataset": "data",
+    "skim": "2muons",
+    "protocol": "https",
+    "output_dir": "/tmp/pytest-of-ranriver/pytest-44/e2e_integration0/atlas_cache/2025e-13tev-beta/data/2muons",
+    "n_requested": 1,
+    "n_ok": 1,
+    "n_fail": 0,
+    "local_paths": [
+      "/tmp/pytest-of-ranriver/pytest-44/e2e_integration0/atlas_cache/2025e-13tev-beta/data/2muons/ODEO_FEB2025_v0_2muons_data15_periodD.2muons.root"
+    ],
+    "results": [
+      {
+        "url": "https://opendata.cern.ch/eos/opendata/atlas/rucio/opendata/ODEO_FEB2025_v0_2muons_data15_periodD.2muons.root",
+        "local_path": "/tmp/pytest-of-ranriver/pytest-44/e2e_integration0/atlas_cache/2025e-13tev-beta/data/2muons/ODEO_FEB2025_v0_2muons_data15_periodD.2muons.root",
+        "ok": true,
+        "skipped": true,
+        "expected_size": 34181982,
+        "local_size": 34181982,
+        "error": null
+      }
+    ],
+    "raw_urls": [
+      "https://opendata.cern.ch/eos/opendata/atlas/rucio/opendata/ODEO_FEB2025_v0_2muons_data15_periodD.2muons.root"
+    ]
+  },
+  "submission_trace": {
+    "task_id": "t001_zpeak_fit",
+    "status": "ok",
+    "fit_result": {
+      "mu": 90.753,
+      "sigma": 2.276,
+      "gof": {
+        "p_value": null,
+        "chi2_ndof": null
+      }
+    },
+    "fit_method": {
+      "model": "gauss_plus_const",
+      "fit_range": [
+        70.0,
+        110.0
+      ],
+      "binned_or_unbinned": "binned",
+      "optimizer": "scipy.curve_fit",
+      "initial_params": null,
+      "uncertainties_method": "covariance"
+    },
+    "comments": "Successfully fitted the Z peak. I chose the 'gauss_plus_const' model because it provides a reasonable fit to the peak with a simple background. The fit range [70, 110] GeV was chosen to be centered around the expected Z peak mass of 91 GeV. I am taking the two leading-pt muons to reconstruct the di-muon invariant mass."
+  }
+}
