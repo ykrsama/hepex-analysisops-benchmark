@@ -1,0 +1,66 @@
+version: 1
+task_id: t001_zpeak_fit
+
+# Public contract: declares what structured artifacts a solver must produce.
+# Validation here is artifact existence + schema correctness only.
+# Private rubric-based scoring is separate and not defined here.
+
+required_artifacts:
+  - name: fit_summary.json
+    type: json
+    description: "Primary result artifact. Must contain all required keys below."
+    required_keys:
+      task_id:
+        type: string
+        description: "Must match the task id (t001_zpeak_fit)"
+      status:
+        type: string
+        enum: ["ok", "error"]
+      fit_result:
+        type: object
+        required_keys:
+          mu:
+            type: number
+            description: "Fitted Z peak position in GeV (expected ~91 GeV)"
+          sigma:
+            type: number
+            description: "Fitted peak width in GeV"
+          gof:
+            type: object
+            required_keys:
+              p_value:
+                type: number
+                description: "Goodness-of-fit p-value"
+              chi2_ndof:
+                type: number
+                description: "Reduced chi-squared"
+      fit_method:
+        type: object
+        required_keys:
+          model:
+            type: string
+          fit_range:
+            type: array
+            items: number
+            length: 2
+          binned_or_unbinned:
+            type: string
+            enum: ["binned", "unbinned"]
+          optimizer:
+            type: string
+          initial_params:
+            type: object
+          uncertainties_method:
+            type: string
+
+  - name: artifact_manifest.json
+    type: json
+    description: "Runtime-generated manifest listing all produced artifacts."
+    required_keys:
+      artifacts:
+        type: array
+
+optional_artifacts:
+  - name: plots/zmass_hist.png
+    type: image
+    description: "Di-muon invariant mass histogram with fit overlay."

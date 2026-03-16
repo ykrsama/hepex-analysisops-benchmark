@@ -1,0 +1,26 @@
+id: t001_zpeak_fit
+type: zpeak_fit
+mode: call_white        # mock | call_white
+
+# --- data requirements ---
+needs_data: true
+release: 2025e-13tev-beta
+dataset: data
+skim: 2muons
+protocol: https
+max_files: 1
+workers: 1
+cache: true
+reuse_existing: true
+
+# --- solver prompt (public) ---
+solver_prompt_path: solver_prompt.md
+
+description: "Build m_mumu and fit around Z peak."
+constraints:
+  time_limit_sec: 600
+  memory_gb: 8
+  allow_network: false
+
+# NOTE: rubric_path / eval_ref_path / judge_prompt_path are intentionally
+# absent from this public contract. They live in specs/zpeak_fit/ (private).
