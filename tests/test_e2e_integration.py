@@ -12,7 +12,7 @@ This test validates the FULL evaluation loop:
 
 Prerequisites:
 - White agent repo at: ../hepex-analysisops-agents
-- GEMINI_API_KEY env var (optional, for LLM scoring)
+- GOOGLE_API_KEY env var (optional, for LLM scoring)
 - Data files (will be downloaded if missing)
 
 Usage:
@@ -387,7 +387,7 @@ async def test_e2e_zpeak_fit_full_evaluation(green_agent_process):
     llm_score = judge_output["llm"].get("score", 0)
     print(f"LLM Score: {llm_score}")
     if llm_score == 0:
-        print("  (LLM score is 0 - this is expected if GEMINI_API_KEY is not set)")
+        print("  (LLM score is 0 - this is expected if GOOGLE_API_KEY is not set)")
     
     # Verify issues/signals are present
     assert "issues" in judge_output, "Missing 'issues'"
