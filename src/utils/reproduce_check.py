@@ -36,10 +36,10 @@ def run_check():
 
     # 2. Run Evaluation Multiple Times
     logger.info("Running iteration 1...")
-    result_1 = evaluate_task(spec, trace, gemini=None)
+    result_1 = evaluate_task(spec, trace, judge=None)
     
     logger.info("Running iteration 2...")
-    result_2 = evaluate_task(spec, trace, gemini=None)
+    result_2 = evaluate_task(spec, trace, judge=None)
     
     # 3. Compare Results
     # We compare the JSON serialization to ensure everything is identical

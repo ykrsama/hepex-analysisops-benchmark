@@ -56,11 +56,11 @@ def test_task_evaluation(task_dir):
         pytest.fail(f"No mock trace registered for task type '{task_type}': {e}")
 
     # 3. Evaluate
-    # Pass gemini=None because we don't want to use real LLM for logic checks if possible,
+    # Pass judge=None because we don't want to use real LLM for logic checks if possible,
     # or ensure mock trace covers everything.
-    # Note: If judge_prompt needs simple checking, gemini=None might fail if the code relies on it.
-    # But for rule-based grading (which is preferred in this benchmark), it should work or Mock Gemini.
-    result = evaluate_task(spec, trace, gemini=None)
+    # Note: If judge_prompt needs simple checking, judge=None might fail if the code relies on it.
+    # But for rule-based grading (which is preferred in this benchmark), it should work or Mock judge.
+    result = evaluate_task(spec, trace, judge=None)
 
     # 4. Assertions
     assert "final" in result

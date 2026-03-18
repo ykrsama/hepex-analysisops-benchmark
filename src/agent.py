@@ -19,7 +19,7 @@ from utils.atlas_download import ensure_atlas_open_data_downloaded
 from engine.package_loader import load_spec_bundle, load_solver_prompt
 from engine.prompt_render import _builtin_minimal_prompt
 from engine.evaluator import evaluate_task
-from engine.llm_judge_gemini import GeminiJudge
+from engine.llm_judge import get_judge
 
 from utils.mock_traces import get_mock_trace
 from dotenv import load_dotenv, find_dotenv
@@ -40,10 +40,10 @@ class Agent:
         load_dotenv(find_dotenv())
         self.messenger = Messenger()
         try:
-            self.gemini_judge = GeminiJudge()
-        except RuntimeError:
-            # OK if key missing, assuming run() won't need it or will fail gracefully
-            self.gemini_judge = None
+            self.llm_judge = get_judge()
+        except RuntimeError as e:
+            logger.warning(f"Judge initialization failed, evaluation requiring LLMs will fail: {e}")
+            self.llm_judge = None
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self.required_roles) - set(request.participants.keys())
@@ -342,11 +342,11 @@ class Agent:
                         "eval_ref": eval_ref,
                         "judge_prompt": bundle.get("judge_prompt"),
                     }
-                    gemini = self.gemini_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
+                    judge = self.llm_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
                     report = evaluate_task(
                         spec=spec,
                         trace=submission_trace,
-                        gemini=gemini,
+                        judge=judge,
                     )
                 else:
                     # --- V2 path: no rubric → public-safe contract validation ---
