@@ -1,6 +1,6 @@
 # HEPEx AnalysisOps Benchmark (Green Agent)
 
-[![Test and Publish Agent](https://github.com/ranriver/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml/badge.svg)](https://github.com/ranriver/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml)
+[![Test and Publish Agent](https://github.com/hrzhao76/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml/badge.svg)](https://github.com/hrzhao76/hepex-analysisops-benchmark/actions/workflows/test-and-publish.yml)
 
 > **AgentBeats Green Agent** for evaluating autonomous agents on high-energy physics (HEP) analysis workflows.
 
@@ -26,13 +26,13 @@ This benchmark evaluates an agent's ability to perform end-to-end physics analys
 
 ```bash
 # Pull from GHCR
-docker pull ghcr.io/ranriver/hepex-analysisops-benchmark:latest
+docker pull ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest
 
 # Or build locally
 docker build -t hepex-green-agent:local .
 
 # Run (listens on port 9009)
-docker run -p 9009:9009 ghcr.io/ranriver/hepex-analysisops-benchmark:latest
+docker run -p 9009:9009 ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest
 ```
 
 ### Local Development

@@ -119,8 +119,8 @@ async def trigger_evaluation(green_url, purple_internal_url):
 
 def main():
     parser = argparse.ArgumentParser(description="Reproduce the benchmark locally using Docker Compose.")
-    parser.add_argument("--green-image", default="ghcr.io/ranriver/hepex-analysisops-benchmark:latest", help="Green agent image")
-    parser.add_argument("--purple-image", default="ghcr.io/ranriver/hepex-analysisops-agents:latest", help="Purple agent image")
+    parser.add_argument("--green-image", default="ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest", help="Green agent image")
+    parser.add_argument("--purple-image", default="ghcr.io/hrzhao76/hepex-analysisops-agents:latest", help="Purple agent image")
     parser.add_argument("--local", action="store_true", help="Use local images (hepex-green-agent:local / hepex-purple-agent:local)")
     parser.add_argument("--detach", "-d", action="store_true", help="Run in detached mode (don't stream logs)")
     
