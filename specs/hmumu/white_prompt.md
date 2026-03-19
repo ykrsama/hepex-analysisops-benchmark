@@ -10,20 +10,27 @@ The $H \rightarrow \mu^+ \mu^-$ decay is rare (branching ratio ~2e-4) and sits o
 
 ### 1. Event Selection
 Implement the following cuts sequence. Record the number of events passing each step.
-1.  **Trigger**: Single muon trigger `trigM`.
-2.  **Trigger Match**: At least one muon matched to the trigger.
-3.  **Two Muons**: Exactly 2 muons (Type 13).
-4.  **Kinematics**: Both muons $p_T > 30$ GeV.
-5.  **Charge**: Opposite charge ($\sum q = 0$).
-6.  **MET**: $E_T^{miss} \le 80$ GeV (suppress $t\bar{t}$).
-7.  **Quality**: Medium ID, Loose Iso for both muons.
-8.  **Jet Veto (b-tag)**: No b-tagged jets (quantile < 3 is b-tag, so require all jets >= 3 or similar check). Explicitly: Veto events with any b-tagged jets to suppress $t\bar{t}$.
-9.  **VBF Tagging**:
-    - At least 2 jets with $p_T > 30$ GeV.
+1. **Trigger**: Single muon trigger `trigM`.
+
+2. **Trigger Match**: At least one muon matched to the trigger.
+
+3. **Two Muons**: Exactly 2 muons (Type 13).
+
+4. **Kinematics**: Both muons $p_T > 30$ GeV.
+
+5. **Charge**: Opposite charge ($\sum q = 0$).
+
+6. **MET**: $E_T^{miss} \le 80$ GeV (suppress $t\bar{t}$).
+
+7. **Quality**: Medium ID, Loose Iso for both muons.
+
+8. **Jet Veto (b-tag)**: To suppress $t\bar{t}$ background, require that NO jets have a b-tagging quantile < 3 (i.e., `ak.sum(jet_btag_quantile < 3) == 0`).
+
+9. **VBF Tagging**:
+    - At least 2 jets with $p_T > 30$ GeV **AND $E > 30$ GeV**.
     - $m_{jj} > 500$ GeV.
-    - $|\Delta\eta_{jj}| > 3.0$.
-    - Jets in opposite hemispheres ($\eta_1 \cdot \eta_2 < 0$).
-    - Separation: $\Delta R(\mu, j) > 0.4$ for all combinations.
+    - $|\Delta\eta_{jj}| > 3.0$ and opposite hemispheres ($\eta_1 \cdot \eta_2 < 0$).
+    - Separation: $\Delta R(\mu, j) \ge 0.4$ for all combinations of muons and tagging jets.
 
 ### 2. Signal Extraction
 Fit the dimuon invariant mass distribution ($m_{\mu\mu}$) in the range [110, 160] GeV.
