@@ -16,10 +16,10 @@ from tasks.task_spec import GreenConfig, TaskSpec, load_task_spec
 
 from utils import _utc_now_iso, _new_run_id, _safe_write_json, _safe_write_text
 from utils.atlas_download import ensure_atlas_open_data_downloaded  
-from engine.package_loader import load_spec_bundle
+from engine.package_loader import load_spec_bundle, load_solver_prompt
 from engine.prompt_render import _builtin_minimal_prompt
 from engine.evaluator import evaluate_task
-from engine.llm_judge_gemini import GeminiJudge
+from engine.llm_judge import get_judge
 
 from utils.mock_traces import get_mock_trace
 from dotenv import load_dotenv, find_dotenv
@@ -40,10 +40,10 @@ class Agent:
         load_dotenv(find_dotenv())
         self.messenger = Messenger()
         try:
-            self.gemini_judge = GeminiJudge()
-        except RuntimeError:
-            # OK if key missing, assuming run() won't need it or will fail gracefully
-            self.gemini_judge = None
+            self.llm_judge = get_judge()
+        except RuntimeError as e:
+            logger.warning(f"Judge initialization failed, evaluation requiring LLMs will fail: {e}")
+            self.llm_judge = None
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
         missing_roles = set(self.required_roles) - set(request.participants.keys())
@@ -92,12 +92,9 @@ class Agent:
         # return {"task_id": task.id, "status": "error", "error": "call_white not implemented yet"}
 
         # ---- call_white path ----
-        bundle = load_spec_bundle(task)
-        # 1) prepare white prompt
-        if bundle.get("white_prompt"):
-            prompt = bundle["white_prompt"]
-        else:
-            prompt = _builtin_minimal_prompt(task.id, task.type)
+        # V2: use load_solver_prompt() which resolves solver_prompt.md first,
+        # then falls back to white_prompt.md (V1 compat).
+        prompt = load_solver_prompt(task) or _builtin_minimal_prompt(task.id, task.type)
 
         # optional: simple templating
         prompt = (
@@ -316,8 +313,16 @@ class Agent:
 
 
             # persist judge input snapshot (what engine sees)
+            # Sensitive eval fields are stripped so this file is safe to write
+            # in a public-facing run directory.
+            _SENSITIVE_TASK_FIELDS = {
+                "rubric_path", "eval_ref_path", "judge_prompt_path", "white_prompt_path"
+            }
             judge_input = {
-                "task_spec": task.model_dump(),  # pydantic v2
+                "task_spec": {
+                    k: v for k, v in task.model_dump().items()
+                    if k not in _SENSITIVE_TASK_FIELDS
+                },
                 "data_info": data_info,
                 "submission_trace": submission_trace,
             }
@@ -326,24 +331,28 @@ class Agent:
             # 3c) Evaluate
             try:
 
-                bundle = load_spec_bundle(task)  # {"rubric":..., "eval_ref":..., "judge_prompt":..., "white_prompt":...}
+                bundle = load_spec_bundle(task)  # {rubric, eval_ref, judge_prompt, ...}
                 eval_ref = bundle.get("eval_ref", {}) or {}
-                spec = {
-                    # keep task metadata if you want to log/debug
-                    "task": task.model_dump(),
-                    # what evaluator needs
-                    "rubric": bundle["rubric"],
-                    "eval_ref": eval_ref,
-                    "judge_prompt": bundle.get("judge_prompt"),   # may be None
-                }
 
-                # decide whether to use gemini 
-                gemini = self.gemini_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
-                report = evaluate_task(
-                    spec=spec,
-                    trace=submission_trace,
-                    gemini=gemini,
-                )
+                if bundle["rubric"]:
+                    # --- V1 path: private rubric available → full scoring ---
+                    spec = {
+                        "task": task.model_dump(),
+                        "rubric": bundle["rubric"],
+                        "eval_ref": eval_ref,
+                        "judge_prompt": bundle.get("judge_prompt"),
+                    }
+                    judge = self.llm_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
+                    report = evaluate_task(
+                        spec=spec,
+                        trace=submission_trace,
+                        judge=judge,
+                    )
+                else:
+                    # --- V2 path: no rubric → public-safe contract validation ---
+                    from engine.contract_validator import validate_contract
+                    report = validate_contract(task, submission_trace)
+
             except Exception as e:
                 err_text = f"{type(e).__name__}: {e}"
                 _safe_write_text(task_eval_dir / "engine_error.txt", err_text)

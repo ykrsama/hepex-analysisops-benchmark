@@ -4,11 +4,11 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional, List
 
 from .rule_engine import evaluate_rules, RuleReport
-from .llm_judge_gemini import GeminiJudge
-from .checks import clamp  # 或者你放到 utils.py
+from .llm_judge import BaseJudge
+from .checks import clamp
 
 
-def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, gemini: Optional[GeminiJudge] = None) -> Dict[str, Any]:
+def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, judge: Optional[BaseJudge] = None) -> Dict[str, Any]:
     rubric = spec["rubric"]
     total_max = float(rubric.get("total", 100))
 
@@ -16,7 +16,7 @@ def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, gemini: Option
     rule: RuleReport = evaluate_rules(spec, trace)
 
     if not rule.gate_passed:
-        # gate fail: by design → 0 (或你支持 fail_total_score)
+        # gate fail: by design → 0 
         return {
             "status": "fail",
             "hard_checks_passed": False,
@@ -34,7 +34,7 @@ def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, gemini: Option
     llm_issues: List[dict] = []
 
     llm_checks = rubric.get("llm_checks", []) or []
-    if llm_checks and gemini is not None:
+    if llm_checks and judge is not None:
         # v0: assume only one reasoning check; can loop later
         for lc in llm_checks:
             if lc.get("type") != "llm_reasoning":
@@ -46,7 +46,7 @@ def evaluate_task(spec: Dict[str, Any], trace: Dict[str, Any], *, gemini: Option
             clamp_rng = lc.get("clamp", [0, 100])
             conf_key = lc.get("confidence_key", None)
 
-            res = gemini.judge(spec, trace, rule.signals, rule.issues)
+            res = judge.judge(spec, trace, rule.signals, rule.issues)
             if not res.ok or not res.parsed:
                 llm_issues.append({"severity":"warn","code":"LLM_FAIL","message":res.error, "evidence":res.raw_text[:400]})
                 continue
