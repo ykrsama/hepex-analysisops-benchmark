@@ -8,8 +8,6 @@ The $H \rightarrow b\bar{b}$ decay has the largest branching ratio (~58%) but su
 
 ## Analysis Steps
 
-### 1. Read Data and MC Data
-
 ### 1. Event Selection
 
 Implement the following cuts sequence. Record the number of events passing each step.
