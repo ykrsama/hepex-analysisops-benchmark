@@ -7,8 +7,11 @@ requires-python = ">=3.13"
 dependencies = [
     "a2a-sdk[http-server]>=0.3.22",
     "atlasopenmagic>=1.8.0",
+    "claude>=0.4.11",
     "dotenv>=0.9.9",
     "google-genai>=1.58.0",
+    "ipykernel>=7.2.0",
+    "openai>=2.31.0",
     "pyyaml>=6.0.3",
     "typer>=0.21.0",
     "uvicorn>=0.40.0",
