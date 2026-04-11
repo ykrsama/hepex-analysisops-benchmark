@@ -1,0 +1,59 @@
+You are helping convert a notebook-style Python analysis script into a clean benchmark reference document.
+
+The input is a Python file converted from a Jupyter notebook. It may contain:
+- markdown comments
+- explanatory text
+- code cells
+- plotting boilerplate
+- installation instructions
+- tutorial-style educational content
+
+Your task is to extract the core scientific workflow and rewrite it as a clean markdown file named `reference_analysis.md`.
+
+Output requirements:
+- Output only markdown
+- Do not include JSON
+- Do not include code blocks unless absolutely necessary
+- Do not include notebook cell markers such as "# %%"
+- Do not include package installation instructions
+- Do not include image links, HTML, or UI instructions
+- Do not include long plotting-style details unless they are scientifically important
+
+The output must use exactly these sections:
+
+# Objective
+A short description of the physics goal.
+
+# Data
+What data or samples are used.
+
+# Key Variables
+The main physics variables used in the analysis.
+
+# Selection
+The main event/object selection logic, written as concise bullet points.
+
+# Observable
+The core observable(s) constructed for the analysis.
+
+# Analysis
+The main workflow steps used to turn selected events into a result.
+
+# Inference
+How the result is extracted (for example peak finding, fit, likelihood, comparison to expectation).
+
+# Interpretation
+What physical conclusion the analysis is trying to support.
+
+Additional rules:
+- Focus on the analysis logic, not implementation noise
+- Preserve physics motivation when present
+- Summarize long code regions into short scientific descriptions
+- Keep the result concise and benchmark-friendly
+- If the input is tutorial-like, strip teaching language and keep only the actual analysis workflow
+- If a fit model is used, mention it briefly
+- If cuts are motivated by signal/background separation, preserve that motivation
+
+Here is the notebook-style Python script:
+
+{{PYTHON_SCRIPT}}

@@ -1,0 +1,223 @@
+You are designing a benchmark for evaluating AI agents on scientific workflows in high energy physics.
+
+I will give you a structured `reference_analysis.md` document that describes a completed physics analysis.
+
+Your job is to transform it into a benchmark package with multiple output files.
+
+The benchmark must support three autonomy levels now:
+- L1: Directed Execution
+- L2: Guided Autonomy
+- L3: Open Scientific Autonomy
+
+It should also preserve the scoring weight specification for L4 so the benchmark can be extended later.
+
+================================
+Scoring dimensions
+================================
+
+Use exactly these six dimensions:
+
+- execution
+- pipeline
+- reasoning
+- implementation
+- analysis
+- validation
+
+Use the following weights exactly:
+
+| Weights        | L1   | L2   | L3   | L4   |
+| -------------- | ---- | ---- | ---- | ---- |
+| execution      | 0.4  | 0.1  | 0.0  | 0.0  |
+| pipeline       | 0.2  | 0.3  | 0.25 | 0.15 |
+| reasoning      | 0.1  | 0.25 | 0.3  | 0.25 |
+| implementation | 0.3  | 0.2  | 0.15 | 0.15 |
+| analysis       | 0.0  | 0.15 | 0.2  | 0.1  |
+| validation     | 0.0  | 0.0  | 0.1  | 0.35 |
+
+================================
+Definitions of dimensions
+================================
+
+Use these meanings consistently:
+
+- execution: whether the task runs and required outputs are produced
+- pipeline: whether the workflow contains the expected scientific stages
+- reasoning: whether scientific choices are justified
+- implementation: whether computations and code logic are correct
+- analysis: whether the analysis extracts a meaningful scientific result
+- validation: whether the result is checked, stress-tested, or compared against alternatives
+
+================================
+Required output files
+================================
+
+You must generate content for the following virtual files:
+
+1. `l1_prompt.md`
+2. `l2_prompt.md`
+3. `l3_prompt.md`
+4. `public_rubric.yaml`
+5. `private_rubric_l1.yaml`
+6. `private_rubric_l2.yaml`
+7. `private_rubric_l3.yaml`
+
+Do NOT generate private_rubric_l4.yaml yet, but preserve the L4 weights in public_rubric.yaml for future extension.
+
+================================
+Requirements for each file
+================================
+
+--------------------------------
+File: l1_prompt.md
+--------------------------------
+- Write a concise but explicit step-by-step task prompt.
+- The agent should mostly succeed by following instructions.
+- Include enough detail to make execution straightforward.
+- Do not make it absurdly long.
+- Keep it benchmark-style, not tutorial-style.
+
+--------------------------------
+File: l2_prompt.md
+--------------------------------
+- Write a guided task prompt.
+- Preserve the same physics goal as L1.
+- Remove most procedural detail.
+- Keep only mild hints about standard strategy or observables.
+- The agent should need to reconstruct the workflow.
+
+--------------------------------
+File: l3_prompt.md
+--------------------------------
+- Write an open-ended scientific task prompt.
+- Preserve the same underlying physics objective.
+- Avoid method hints unless absolutely necessary.
+- The agent should design the analysis strategy itself.
+- Keep it concrete enough to be benchmarkable, but genuinely more open than L2.
+
+--------------------------------
+File: public_rubric.yaml
+--------------------------------
+This file must contain:
+- the six dimensions
+- one short visible description per dimension
+- the exact L1/L2/L3/L4 weight table
+
+It must NOT contain hidden checks.
+
+Suggested structure:
+
+weights:
+  L1:
+    execution: ...
+    pipeline: ...
+    reasoning: ...
+    implementation: ...
+    analysis: ...
+    validation: ...
+  L2:
+    ...
+  L3:
+    ...
+  L4:
+    ...
+
+dimensions:
+  - name: execution
+    description: ...
+  - name: pipeline
+    description: ...
+  - name: reasoning
+    description: ...
+  - name: implementation
+    description: ...
+  - name: analysis
+    description: ...
+  - name: validation
+    description: ...
+
+--------------------------------
+File: private_rubric_l1.yaml
+--------------------------------
+- Hidden checks for L1 only
+- Align with L1 weights
+- Emphasize execution and implementation
+- Keep checks concrete and testable
+- Avoid vague phrases like "good reasoning"
+- Include checks under all six dimensions, but dimensions with zero or low weight should have fewer or lighter checks
+- The content should support implementation later in code or judge logic
+
+--------------------------------
+File: private_rubric_l2.yaml
+--------------------------------
+- Hidden checks for L2 only
+- Align with L2 weights
+- Emphasize pipeline and reasoning
+- Keep checks concrete, testable, and benchmark-usable
+
+--------------------------------
+File: private_rubric_l3.yaml
+--------------------------------
+- Hidden checks for L3 only
+- Align with L3 weights
+- Emphasize reasoning, pipeline, analysis, and some validation
+- Reward defensible scientific design, not rote copying
+- Keep checks concrete and benchmark-usable
+
+================================
+Important benchmark design constraints
+================================
+
+1. All three levels must refer to the same underlying scientific task.
+2. L1/L2/L3 should differ primarily in autonomy, not in physics target.
+3. Do not simply copy the reference analysis verbatim into all prompts.
+4. L1 should be explicit but not bloated.
+5. L2 should be guided but not give away the full recipe.
+6. L3 should be open-ended but still evaluable.
+7. Public rubric must remain high-level and transparent.
+8. Private rubrics must be specific enough to implement later.
+9. Private rubrics should not reveal trivial answer keys.
+10. The private rubrics should reflect the reference analysis but should not assume the reference is the only valid solution.
+11. When a reference contains exact cuts or a specific fit model, private rubrics should distinguish between:
+    - essential scientific ingredients
+    - reference-specific implementation choices
+12. Prefer checks like:
+    - "constructs a resonance-sensitive observable"
+    - "uses physically motivated photon selection"
+    over unnecessarily narrow checks like:
+    - "must use exactly X library"
+    - "must use exactly one specific plotting style"
+13. Make each private rubric practically useful for later deterministic checks, heuristics, or LLM-judge evaluation.
+
+================================
+Output format
+================================
+
+Return all files in a single response using this exact block format:
+
+=== FILE: l1_prompt.md ===
+<content>
+
+=== FILE: l2_prompt.md ===
+<content>
+
+=== FILE: l3_prompt.md ===
+<content>
+
+=== FILE: public_rubric.yaml ===
+<content>
+
+=== FILE: private_rubric_l1.yaml ===
+<content>
+
+=== FILE: private_rubric_l2.yaml ===
+<content>
+
+=== FILE: private_rubric_l3.yaml ===
+<content>
+
+Do not include any explanation outside the file blocks.
+
+Here is the reference analysis:
+
+{{REFERENCE_ANALYSIS_MD}}
