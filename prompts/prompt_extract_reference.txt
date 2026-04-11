@@ -11,7 +11,7 @@ The input is a Python file converted from a Jupyter notebook. It may contain:
 
 Your task is to extract the core scientific workflow and rewrite it as a clean markdown file named `reference_analysis.md`.
 
-Your output must be optimized for downstream benchmark generation. It should describe the workflow clearly, but it must NOT overfit to one exact implementation or leak unnecessary solution details.
+This reference document will be used downstream to generate benchmark tasks and rubrics for multiple autonomy levels, including L1 (Directed Execution). Therefore, it must preserve the scientifically important operational details of the reference workflow.
 
 ================================
 Output requirements
@@ -61,11 +61,44 @@ Critical constraints
    - teaching-only commentary
 4. Preserve physics motivation when scientifically meaningful.
 5. Summarize long code blocks into short workflow descriptions.
-6. Do not include unnecessary implementation detail that would lock in one exact solution.
-7. Do not over-specify exact parameter values unless they are central to the scientific logic.
-8. If exact cuts or fit models appear in the script, retain them only when they are clearly part of the intended reference workflow; otherwise summarize them as reasonable physics-motivated selections.
+6. Do NOT preserve irrelevant implementation details such as plotting style, notebook behavior, package setup, or cosmetic formatting.
+7. Do preserve key operational details when they are central to the intended reference workflow.
+8. In particular, preserve explicitly:
+   - named branches / physics variables when central
+   - cut thresholds and selection constants
+   - veto regions
+   - histogram window and binning if specified
+   - fit model family and key fit range if specified
+   - important dependencies between steps (for example, computing m_yy before using pT/m_yy)
 9. The result should read like a reference workflow, not a hidden answer key.
-10. The analysis should remain specific enough that benchmark prompts and rubrics can be derived from it.
+10. The result should be specific enough that an L1 task can be generated from it without losing critical thresholds.
+11. At the same time, avoid unnecessary low-level code details such as exact library syntax unless the method itself is scientifically important.
+
+================================
+How to handle specificity
+================================
+
+Use this rule:
+
+- Preserve exact numerical values when they are part of the intended baseline scientific procedure.
+- Abstract away exact values only when they are incidental and not needed for benchmark generation.
+
+Examples of details that SHOULD be preserved if present:
+- leading photon pT > 50 GeV
+- subleading photon pT > 30 GeV
+- isolation fraction < 0.055
+- veto 1.37 < |eta| < 1.52
+- pT/m_yy > 0.35
+- mass window 100–160 GeV
+- background model = 4th-order polynomial
+- signal model = Gaussian
+
+Examples of details that should usually NOT be preserved:
+- notebook menu instructions
+- exact plotting color/style
+- package installation commands
+- decorative text
+- image references
 
 ================================
 Quality target
@@ -74,11 +107,12 @@ Quality target
 A strong output should:
 - preserve the scientific objective
 - preserve the workflow stages
-- preserve the role of key observables and selections
-- preserve the type of inference used
-- avoid excessive leakage of exact implementation details
-- avoid sounding like a tutorial
-- avoid sounding like a final judged solution
+- preserve the key observables
+- preserve the intended baseline cut thresholds when present
+- preserve the intended inference model when present
+- remain concise and structured
+- avoid tutorial noise
+- avoid low-value implementation clutter
 
 Here is the notebook-style Python script:
 
