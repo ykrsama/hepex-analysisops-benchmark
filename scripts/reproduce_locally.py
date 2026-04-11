@@ -3,14 +3,15 @@ import argparse
 import asyncio
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import uuid
 import time
 
 try:
-    from a2a.client import A2ACardResolver, A2AClient
-    from a2a.types import MessageSendParams, SendMessageRequest
+    from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+    from a2a.types import Message, Part, Role, TextPart
     import httpx
 except ImportError:
     print("Error: 'a2a-sdk' and 'httpx' are required.")
@@ -36,8 +37,13 @@ services:
       - "9000:9009"
     environment:
       - HEPEX_DATA_DIR=/home/agent/output
+      - HEPEX_JUDGE_PROVIDER={judge_provider}
+      - HEPEX_OPENAI_MODEL={judge_openai_model}
+      - HEPEX_OLLAMA_MODEL={judge_ollama_model}
+      - OLLAMA_HOST={ollama_host}
     volumes:
       - ./output:/home/agent/output
+      - ./shared_input:/shared/hepex/input
     env_file:
       - .env
     depends_on:
@@ -49,44 +55,117 @@ services:
     command: ["--host", "0.0.0.0", "--card-url", "http://purple-agent:9009/"]
     environment:
       - HEPEX_DATA_DIR=/home/agent/output
+      - HEPEX_AGENT_MODEL={agent_model}
+      - OLLAMA_HOST={ollama_host}
+      - OLLAMA_API_BASE={ollama_host}
     volumes:
       - ./output:/home/agent/output
+      - ./shared_input:/shared/hepex/input:ro
     ports:
       - "9009:9009"
     env_file:
       - .env
 """
 
-def generate_compose(green_image, purple_image, output_file="docker-compose.yml"):
+def _strip_provider_prefix(model_name: str, provider: str) -> str:
+    prefix = f"{provider}/"
+    return model_name[len(prefix):] if model_name.startswith(prefix) else model_name
+
+
+def _agent_model_string(provider: str, model_name: str) -> str:
+    if "/" in model_name:
+        return model_name
+    if provider == "openai":
+        return f"openai/{model_name}"
+    if provider == "ollama":
+        return f"ollama/{model_name}"
+    return model_name
+
+
+def _load_task_metadata(task_dir: str) -> tuple[str, str, str]:
+    task_spec_path = Path(task_dir) / "task_spec.yaml"
+    if not task_spec_path.exists():
+        raise FileNotFoundError(f"Task spec not found: {task_spec_path}")
+
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError("PyYAML is required to read task_spec.yaml") from exc
+
+    task_spec = yaml.safe_load(task_spec_path.read_text(encoding="utf-8")) or {}
+    release = task_spec.get("release")
+    dataset = task_spec.get("dataset")
+    skim = task_spec.get("skim")
+    if not release or not dataset or not skim:
+        raise ValueError(
+            f"Task spec {task_spec_path} must define release, dataset, and skim for local shared-input runs."
+        )
+    return str(release), str(dataset), str(skim)
+
+
+def generate_compose(
+    green_image,
+    purple_image,
+    judge_provider,
+    judge_openai_model,
+    judge_ollama_model,
+    agent_model,
+    ollama_host,
+    output_file="docker-compose.yml",
+):
     # We only format the image names. Env vars are handled by docker compose reading .env
     content = TEMPLATE.format(
         green_image=green_image, 
-        purple_image=purple_image
+        purple_image=purple_image,
+        judge_provider=judge_provider,
+        judge_openai_model=judge_openai_model,
+        judge_ollama_model=judge_ollama_model,
+        agent_model=agent_model,
+        ollama_host=ollama_host,
     )
     with open(output_file, "w") as f:
         f.write(content)
     print(f"Generated {output_file}")
 
-async def trigger_evaluation(green_url, purple_internal_url):
+async def wait_for_agent(base_url, label, timeout=60.0):
+    deadline = time.time() + timeout
+    async with httpx.AsyncClient(timeout=5.0) as httpx_client:
+        resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
+        attempt = 0
+        while time.time() < deadline:
+            attempt += 1
+            try:
+                agent_card = await resolver.get_agent_card()
+                print(f"{label} is ready: {agent_card.name} ({agent_card.version})")
+                return True
+            except Exception:
+                await asyncio.sleep(2.0)
+        return False
+
+
+async def trigger_evaluation(
+    green_url,
+    purple_internal_url,
+    task_dir,
+    shared_input_dir,
+    input_manifest_path,
+    persist_payloads,
+):
     print(f"Connecting to Green Agent at {green_url}...")
     
     # Construct the EvalRequest payload for the green agent
     eval_request = {
         "participants": {
-            "white_agent": purple_internal_url
+            "purple_agent": purple_internal_url
         },
         "config": {
-            "task_dirs": ["specs/zpeak_fit"],
-            "data_dir": "/home/agent/output"  # Use mounted volume for persistent output
-        }
-    }
-
-    # Wrap in A2A message structure
-    send_message_payload = {
-        "message": {
-            "role": "user",
-            "parts": [{"kind": "text", "text": json.dumps(eval_request)}],
-            "messageId": uuid.uuid4().hex,
+            "task_dirs": [task_dir],
+            "data_dir": "/home/agent/output",
+            "input_access_mode": "local_shared_mount",
+            "shared_input_dir": shared_input_dir,
+            "input_manifest_path": input_manifest_path,
+            "allow_green_download": False,
+            "persist_payloads": persist_payloads,
         }
     }
 
@@ -102,15 +181,20 @@ async def trigger_evaluation(green_url, purple_internal_url):
             raise e
 
         # 2. Send the message
-        client = A2AClient(httpx_client=httpx_client, agent_card=agent_card)
-        request = SendMessageRequest(
-            id=str(uuid.uuid4()),
-            params=MessageSendParams(**send_message_payload),
+        config = ClientConfig(httpx_client=httpx_client, streaming=False)
+        factory = ClientFactory(config)
+        client = factory.create(agent_card)
+        outbound_msg = Message(
+            kind="message",
+            role=Role.user,
+            parts=[Part(TextPart(kind="text", text=json.dumps(eval_request)))],
+            message_id=uuid.uuid4().hex,
         )
-        
+
         print("Sending EvalRequest...")
         try:
-            response = await client.send_message(request)
+            async for _ in client.send_message(outbound_msg):
+                pass
             print("Request sent successfully!")
             return True
         except Exception as e:
@@ -123,14 +207,44 @@ def main():
     parser.add_argument("--purple-image", default="ghcr.io/hrzhao76/hepex-analysisops-agents:latest", help="Purple agent image")
     parser.add_argument("--local", action="store_true", help="Use local images (hepex-green-agent:local / hepex-purple-agent:local)")
     parser.add_argument("--detach", "-d", action="store_true", help="Run in detached mode (don't stream logs)")
+    parser.add_argument("--task-dir", default="tasks_public/t002_hyy_v5_l1", help="Task directory to evaluate")
+    parser.add_argument(
+        "--llm-provider",
+        choices=["ollama", "openai"],
+        default="ollama",
+        help="LLM backend for local testing. Defaults to ollama.",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default="gpt-oss:20b",
+        help="Model name for the selected provider. Defaults to gpt-oss:20b.",
+    )
+    parser.add_argument(
+        "--ollama-host",
+        default="http://host.docker.internal:11434",
+        help="Ollama base URL reachable from the containers.",
+    )
+    parser.add_argument(
+        "--no-persist-payloads",
+        action="store_true",
+        help="Do not persist eval_request / purple request / purple response payloads into the run directory.",
+    )
     
     args = parser.parse_args()
+    release, dataset, skim = _load_task_metadata(args.task_dir)
+    shared_input_root = Path("shared_input")
+    shared_input_host_dir = shared_input_root / release / dataset / skim
+    shared_input_host_dir.mkdir(parents=True, exist_ok=True)
+    shared_input_dir = f"/shared/hepex/input/{release}/{dataset}/{skim}"
+    input_manifest_path = f"{shared_input_dir}/input_manifest.json"
 
     # Ensure .env exists
     if not os.path.exists(".env"):
         print("Error: .env file not found. Please create one with your API keys.")
         print("Example .env content:")
-        print("GOOGLE_API_KEY=AIza...")
+        print("# For OpenAI mode:")
+        print("OPENAI_API_KEY=sk-...")
+        print("# For Ollama mode, .env can be empty.")
         sys.exit(1)
 
     green_img = args.green_image
@@ -140,11 +254,36 @@ def main():
         green_img = "hepex-green-agent:local"
         purple_img = "hepex-purple-agent:local"
 
+    if args.llm_provider == "openai":
+        judge_provider = "openai"
+        judge_openai_model = _strip_provider_prefix(args.llm_model, "openai")
+        judge_ollama_model = "gpt-oss:20b"
+        agent_model = _agent_model_string("openai", args.llm_model)
+    else:
+        judge_provider = "ollama"
+        judge_openai_model = "gpt-5"
+        judge_ollama_model = _strip_provider_prefix(args.llm_model, "ollama")
+        agent_model = _agent_model_string("ollama", args.llm_model)
+
     # Create output directory
     os.makedirs("output", exist_ok=True)
+    os.makedirs(shared_input_root, exist_ok=True)
 
     # 1. Generate docker-compose
-    generate_compose(green_img, purple_img)
+    generate_compose(
+        green_img,
+        purple_img,
+        judge_provider=judge_provider,
+        judge_openai_model=judge_openai_model,
+        judge_ollama_model=judge_ollama_model,
+        agent_model=agent_model,
+        ollama_host=args.ollama_host,
+    )
+    print(
+        f"Configured local run with provider={judge_provider}, "
+        f"judge_model={judge_ollama_model if judge_provider == 'ollama' else judge_openai_model}, "
+        f"agent_model={agent_model}"
+    )
 
     # 2. Start containers
     print("Starting containers...")
@@ -153,12 +292,26 @@ def main():
     try:
         # 3. Wait/Trigger loop
         print("Waiting for agents to boot...")
+
+        purple_ready = asyncio.run(wait_for_agent("http://localhost:9009", "Purple Agent"))
+        if not purple_ready:
+            print("Purple Agent did not become ready in time.")
+            sys.exit(1)
         
         success = False
         for i in range(15):
             print(f"Attempt {i+1}/15 to contact Green Agent...")
             try:
-                success = asyncio.run(trigger_evaluation("http://localhost:9000", "http://purple-agent:9009"))
+                success = asyncio.run(
+                    trigger_evaluation(
+                        "http://localhost:9000",
+                        "http://purple-agent:9009",
+                        args.task_dir,
+                        shared_input_dir,
+                        input_manifest_path,
+                        not args.no_persist_payloads,
+                    )
+                )
                 if success:
                     break
             except Exception as e:
@@ -175,8 +328,8 @@ def main():
         if not args.detach:
             print("\n" + "="*50)
             print("Streaming logs from containers...")
-            print("NOTE: If this is the first run, the Green Agent might download ROOT files.")
-            print("      Check ./output/ on your host machine to confirm.")
+            print("NOTE: Local shared input is expected under")
+            print(f"      ./shared_input/{release}/{dataset}/{skim}/ on your host machine.")
             print("="*50 + "\n")
             subprocess.run(["docker", "compose", "logs", "-f"])
 

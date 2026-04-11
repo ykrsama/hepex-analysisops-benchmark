@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-04-11T23:00:38.843917+00:00",
+  "task_id": "t002_hyy_v5_l1",
+  "task_type": "hyy_l1",
+  "mode": "call_white",
+  "release": "2025e-13tev-beta",
+  "dataset": "data",
+  "skim": "GamGam",
+  "protocol": "https",
+  "max_files": 5,
+  "reuse_existing": true,
+  "score_total": 0.0,
+  "score_max": 1.0,
+  "normalized_score": 0.0,
+  "finished_at": "2026-04-11T23:00:51.240891+00:00",
+  "status": "contract_fail"
+}

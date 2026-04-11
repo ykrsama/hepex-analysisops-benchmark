@@ -15,6 +15,9 @@ reuse_existing: true
 
 # --- solver prompt (public) ---
 solver_prompt_path: solver_prompt.md
+input_strategy: download
+solver_response_mode: submission_trace
+evaluation_mode: legacy_trace_contract
 
 description: "Build m_mumu and fit around Z peak."
 constraints:

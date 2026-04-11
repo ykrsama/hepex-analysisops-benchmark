@@ -38,10 +38,22 @@ class TaskSpec(BaseModel):
 
     # V2 public contract: solver prompt path
     solver_prompt_path: Optional[str] = "solver_prompt.md"
+    submission_contract_path: Optional[str] = "submission_contract.yaml"
 
     # (optional) task description & constraints
     description: Optional[str] = None
     constraints: dict[str, Any] = Field(default_factory=dict)
+    level: Optional[str] = None
+
+    # Capability-driven execution routing
+    input_strategy: Literal["download", "shared_manifest"] = "download"
+    solver_response_mode: Literal["submission_trace", "submission_bundle_v1"] = "submission_trace"
+    evaluation_mode: Literal["legacy_trace_contract", "directory_contract_and_private_l1"] = "legacy_trace_contract"
+
+    # Task capabilities and defaults for large-input tasks.
+    requires_large_input_data: bool = False
+    supports_scenario_shared_input: bool = False
+    supports_local_shared_input: bool = False
 
     def resolve_path(self, rel: str | None) -> Optional[Path]:
         if not rel:
@@ -57,6 +69,11 @@ class GreenConfig(BaseModel):
     # V2: task directories live under tasks_public/ with numeric prefix.
     # V1 specs/ paths still accepted for backward compatibility.
     task_dirs: list[str] = Field(default_factory=lambda: ["tasks_public/t001_zpeak_fit"])
+    input_access_mode: Optional[Literal["scenario_shared_mount", "local_shared_mount"]] = None
+    shared_input_dir: Optional[str] = None
+    input_manifest_path: Optional[str] = None
+    allow_green_download: bool = False
+    persist_payloads: bool = True
 
 
 def load_task_spec(spec_dir: str | Path) -> TaskSpec:

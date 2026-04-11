@@ -1,0 +1,160 @@
+{
+  "role": "task_request",
+  "task_id": "t002_hyy_v5_l1",
+  "task_type": "hyy_l1",
+  "level": "l1",
+  "prompt": "# 1. Objective\n\nRediscover the Higgs boson in the diphoton channel by reconstructing the diphoton invariant-mass spectrum (m_γγ) and testing for a localized Higgs-like excess near 125 GeV.\n\n---\n\n# 2. Dataset\n\nUse ATLAS Open Data:\n\n- Release: 2025e-13tev-beta\n- Sample: GamGam\n- Mode: diphoton_skim\n\nCombine all specified 2015–2016 periods into a single spectrum.\n\n---\n\n# 3. Submission Contract Requirement\n\nBefore producing any outputs, you MUST read the submission contract carefully.\n\nThe submission contract is the authoritative specification for:\n- required filenames\n- required fields\n- field naming\n- output completeness\n\nDo NOT invent alternative output formats.\n\nThis prompt defines scientific behavior only.\n\n---\n\n# 4. Required Workflow (Strict L1 Execution)\n\nReproduce the baseline workflow exactly in this order:\n\n1. data_loading  \n2. event_selection  \n3. diphoton_mass_construction  \n4. spectrum_histogramming  \n5. uncertainty_assignment  \n6. spectrum_fitting  \n7. signal_interpretation  \n\nDo NOT reorder, skip, or redesign stages.\n\n---\n\n# 5. Event/Object Selection (Exact Baseline)\n\nUse the leading and subleading photons.\n\nBaseline assumption:\n- photon indices 0 and 1 correspond to the ordered leading/subleading pair in this dataset\n\nDo NOT search for alternative pairings.\n\nApply ALL cuts exactly:\n\n- photon_count >= 2\n- leading photon tight ID == true\n- subleading photon tight ID == true\n- leading photon pt > 50 GeV\n- subleading photon pt > 30 GeV\n- isolation ratio < 0.055\n- eta transition veto [1.37, 1.52]\n- m_yy != 0\n- pt / m_yy > 0.35 (both photons)\n\nDo NOT modify thresholds or logic.\n\n---\n\n# 6. Observable and Histogram\n\nPrimary observable: m_yy\n\n- range: 100–160 GeV\n- bin width: 1 GeV\n- uncertainty: sqrt(N)\n\n---\n\n# 7. Inference (Strict Baseline)\n\nPerform a fit with:\n\n- signal: Gaussian\n- background: polynomial (order 4)\n- fit range: 100–160 GeV\n- use weighting consistent with sqrt(N) uncertainties\n\nDo NOT change model family or configuration.\n\n---\n\n# 8. Required Outputs\n\n- diphoton_mass_spectrum.json\n- diphoton_fit_summary.json\n- data_minus_background.json\n- interpretation.md\n- submission_trace.json\n\n---\n\n# 9. Execution Trace Requirement (CRITICAL)\n\nsubmission_trace.json is REQUIRED.\n\nIt must be STRUCTURED (not narrative).\n\nIt must include:\n\n- workflow_stages (ordered execution)\n- cuts_applied (with explicit values)\n- observable_constructed\n- fit_model_family_used\n- output_files_generated\n- reported_result (including signal_peak_position)\n\nDo NOT use free-form text as the main structure.\n\n---\n\n# 10. Anti-Cheating Requirement\n\nAll outputs MUST be derived from actual computation.\n\nDo NOT fabricate results or skip required steps.\n\n---\n\n# 11. Interpretation Requirement\n\nWrite a short conclusion:\n\n- whether a Higgs-like excess is observed\n- approximate peak position\n\nThe conclusion must be consistent with the fit and residual results.\n\n---\n\n# 12. Runtime Input Rules\n\nIf `shared_input_dir` is provided, treat it as read-only input.\nDo not modify dataset files in place.\nReturn outputs through `submission_bundle_v1` as small structured artifacts only.\n",
+  "submission_contract": {
+    "version": 2,
+    "level": "l1",
+    "required_outputs": [
+      {
+        "name": "diphoton_mass_spectrum",
+        "canonical_filename": "diphoton_mass_spectrum.json",
+        "type": "json"
+      },
+      {
+        "name": "diphoton_fit_summary",
+        "canonical_filename": "diphoton_fit_summary.json",
+        "type": "json"
+      },
+      {
+        "name": "data_minus_background",
+        "canonical_filename": "data_minus_background.json",
+        "type": "json"
+      },
+      {
+        "name": "interpretation",
+        "canonical_filename": "interpretation.md",
+        "type": "markdown"
+      },
+      {
+        "name": "submission_trace",
+        "canonical_filename": "submission_trace.json",
+        "type": "json"
+      }
+    ],
+    "schemas": {
+      "diphoton_mass_spectrum.json": {
+        "required_fields": [
+          "bin_edges",
+          "bin_counts",
+          "bin_uncertainties"
+        ]
+      },
+      "diphoton_fit_summary.json": {
+        "required_fields": [
+          "signal_model_family",
+          "background_model_family",
+          "fit_range",
+          "signal_peak_position"
+        ]
+      },
+      "data_minus_background.json": {
+        "required_fields": [
+          "bin_centers",
+          "residual_counts",
+          "residual_uncertainties"
+        ]
+      },
+      "interpretation.md": {
+        "constraints": {
+          "non_empty": true,
+          "min_characters": 20
+        }
+      },
+      "submission_trace.json": {
+        "required_fields": [
+          "workflow_stages",
+          "cuts_applied",
+          "observable_constructed",
+          "fit_model_family_used",
+          "output_files_generated",
+          "reported_result",
+          "baseline_assumptions_used",
+          "object_definition",
+          "derived_observables",
+          "primary_observable",
+          "histogram_definition"
+        ],
+        "nested_required_fields": {
+          "workflow_stages": {
+            "required_fields": [
+              "stage_id",
+              "order_index",
+              "status"
+            ]
+          },
+          "cuts_applied": {
+            "required_fields": [
+              "cut_id",
+              "value",
+              "applied"
+            ]
+          },
+          "observable_constructed": {
+            "required_fields": [
+              "name",
+              "inputs"
+            ]
+          },
+          "reported_result": {
+            "required_fields": [
+              "signal_peak_position"
+            ]
+          },
+          "fit_model_family_used": {
+            "required_fields": [
+              "signal",
+              "background",
+              "background_order",
+              "fit_range_GeV",
+              "weighting_scheme"
+            ]
+          },
+          "object_definition": {
+            "required_fields": [
+              "type",
+              "multiplicity",
+              "ordering_principle"
+            ]
+          },
+          "primary_observable": {
+            "required_fields": [
+              "name",
+              "inputs",
+              "construction"
+            ]
+          },
+          "histogram_definition": {
+            "required_fields": [
+              "observable",
+              "range",
+              "bin_width",
+              "uncertainty_model"
+            ]
+          }
+        },
+        "field_types": {
+          "baseline_assumptions_used": "array_string",
+          "derived_observables": "array_object",
+          "primary_observable": "object",
+          "histogram_definition": "object",
+          "fit_model_family_used": "object"
+        }
+      }
+    }
+  },
+  "data": {
+    "release": "2025e-13tev-beta",
+    "dataset": "data",
+    "skim": "GamGam",
+    "shared_input_dir": "/shared/hepex/input/2025e-13tev-beta/data/GamGam",
+    "input_manifest_path": "/shared/hepex/input/2025e-13tev-beta/data/GamGam/input_manifest.json",
+    "read_only_for_solver": true
+  },
+  "constraints": {
+    "response_format": "submission_bundle_v1",
+    "allow_purple_network": false
+  }
+}

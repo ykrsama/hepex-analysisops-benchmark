@@ -36,7 +36,7 @@ class GeminiJudge(BaseJudge):
     """
     Minimal Gemini judge.
     Env:
-      - GOOGLE_API_KEY  (Gemini Developer API)
+      - GOOGLE_API_KEY  (Gemini Developer API; non-default provider)
       - HEPEX_GEMINI_MODEL (optional) e.g. "gemini-2.5-flash"
     """
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
@@ -191,7 +191,7 @@ class OpenAIJudge(BaseJudge):
             raise RuntimeError("The 'openai' python package is required for OpenAIJudge")
             
         self.client = OpenAI(api_key=self.api_key)
-        self.model = model or os.getenv("HEPEX_OPENAI_MODEL", "gpt-4o-mini")
+        self.model = model or os.getenv("HEPEX_OPENAI_MODEL", "gpt-5")
 
     def _generate(self, prompt: str) -> str:
         response = self.client.chat.completions.create(
@@ -286,7 +286,7 @@ class AnthropicJudge(BaseJudge):
 
 def get_judge() -> BaseJudge:
     """Factory to instantiate the correct judge based on HEPEX_JUDGE_PROVIDER."""
-    provider = os.getenv("HEPEX_JUDGE_PROVIDER", "ollama").lower()
+    provider = os.getenv("HEPEX_JUDGE_PROVIDER", "openai").lower()
     
     if provider == "gemini":
         return GeminiJudge()

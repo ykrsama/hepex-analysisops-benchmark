@@ -51,10 +51,15 @@ Test the full benchmark locally with a Purple Agent:
 
 ```bash
 # Set API keys
-export GOOGLE_API_KEY="..."
+export OPENAI_API_KEY="..."
+export HEPEX_OPENAI_MODEL="gpt-5"
+export HEPEX_AGENT_MODEL="openai/gpt-5"
 
-# Run the reproduction script
+# Run the reproduction script. This default to use local ollama gpt-oss:20b.
 uv run scripts/reproduce_locally.py --local
+
+## to use 
+uv run scripts/reproduce_locally.py --local --llm-provider openai --llm-model gpt-5
 ```
 
 This generates a `docker-compose.yml` and runs both agents in isolated containers. Results are saved to `./output/`.
@@ -72,11 +77,15 @@ This generates a `docker-compose.yml` and runs both agents in isolated container
 ```json
 {
   "participants": {
-    "white_agent": "http://purple-agent:9009/"
+    "purple_agent": "http://purple-agent:9009/"
   },
   "config": {
-    "task_dirs": ["specs/zpeak_fit"],
-    "data_dir": "/home/agent/output"
+    "task_dirs": ["tasks_public/t002_hyy_v5_l1"],
+    "data_dir": "/home/agent/output",
+    "input_access_mode": "local_shared_mount",
+    "shared_input_dir": "/shared/hepex/input/2025e-13tev-beta/data/GamGam",
+    "input_manifest_path": "/shared/hepex/input/2025e-13tev-beta/data/GamGam/input_manifest.json",
+    "allow_green_download": false
   }
 }
 ```
@@ -92,7 +101,10 @@ output/
 │   ├── submission_trace.json  # Agent response
 │   ├── judge_input.json       # Evaluator input
 │   └── judge_output.json      # Scored result
-└── <release>/<dataset>/<skim>/  # Cached data files
+└── <release>/<dataset>/<skim>/  # Green-agent cache under output/
+
+shared_input/
+└── <release>/<dataset>/<skim>/  # Shared ROOT inputs for local/debug runs
 ```
 
 ## Architecture

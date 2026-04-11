@@ -1,0 +1,16 @@
+{
+  "participants": {
+    "purple_agent": "http://purple-agent:9009/"
+  },
+  "config": {
+    "task_dirs": [
+      "tasks_public/t002_hyy_v5_l1"
+    ],
+    "data_dir": "/home/agent/output",
+    "input_access_mode": "local_shared_mount",
+    "shared_input_dir": "/shared/hepex/input/2025e-13tev-beta/data/GamGam",
+    "input_manifest_path": "/shared/hepex/input/2025e-13tev-beta/data/GamGam/input_manifest.json",
+    "allow_green_download": false,
+    "persist_payloads": true
+  }
+}

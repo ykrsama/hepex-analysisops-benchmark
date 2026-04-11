@@ -1,0 +1,99 @@
+version: 2
+level: l1
+required_outputs:
+- name: diphoton_mass_spectrum
+  canonical_filename: diphoton_mass_spectrum.json
+  type: json
+- name: diphoton_fit_summary
+  canonical_filename: diphoton_fit_summary.json
+  type: json
+- name: data_minus_background
+  canonical_filename: data_minus_background.json
+  type: json
+- name: interpretation
+  canonical_filename: interpretation.md
+  type: markdown
+- name: submission_trace
+  canonical_filename: submission_trace.json
+  type: json
+schemas:
+  diphoton_mass_spectrum.json:
+    required_fields:
+    - bin_edges
+    - bin_counts
+    - bin_uncertainties
+  diphoton_fit_summary.json:
+    required_fields:
+    - signal_model_family
+    - background_model_family
+    - fit_range
+    - signal_peak_position
+  data_minus_background.json:
+    required_fields:
+    - bin_centers
+    - residual_counts
+    - residual_uncertainties
+  interpretation.md:
+    constraints:
+      non_empty: true
+      min_characters: 20
+  submission_trace.json:
+    required_fields:
+    - workflow_stages
+    - cuts_applied
+    - observable_constructed
+    - fit_model_family_used
+    - output_files_generated
+    - reported_result
+    - baseline_assumptions_used
+    - object_definition
+    - derived_observables
+    - primary_observable
+    - histogram_definition
+    nested_required_fields:
+      workflow_stages:
+        required_fields:
+        - stage_id
+        - order_index
+        - status
+      cuts_applied:
+        required_fields:
+        - cut_id
+        - value
+        - applied
+      observable_constructed:
+        required_fields:
+        - name
+        - inputs
+      reported_result:
+        required_fields:
+        - signal_peak_position
+      fit_model_family_used:
+        required_fields:
+        - signal
+        - background
+        - background_order
+        - fit_range_GeV
+        - weighting_scheme
+      object_definition:
+        required_fields:
+        - type
+        - multiplicity
+        - ordering_principle
+      primary_observable:
+        required_fields:
+        - name
+        - inputs
+        - construction
+      histogram_definition:
+        required_fields:
+        - observable
+        - range
+        - bin_width
+        - uncertainty_model
+    field_types:
+      baseline_assumptions_used: array_string
+      derived_observables: array_object
+      primary_observable: object
+      histogram_definition: object
+      fit_model_family_used: object

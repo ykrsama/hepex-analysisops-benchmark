@@ -1,0 +1,5 @@
+{
+  "task_id": "t002_hyy_v5_l1",
+  "status": "error",
+  "error": "Failed to get submission bundle: SubmissionBundleError: submission_bundle_v1 requires an 'artifacts' object."
+}

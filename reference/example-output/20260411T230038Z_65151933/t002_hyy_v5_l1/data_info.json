@@ -1,0 +1,5 @@
+{
+  "shared_input_dir": "/shared/hepex/input/2025e-13tev-beta/data/GamGam",
+  "input_manifest_path": "/shared/hepex/input/2025e-13tev-beta/data/GamGam/input_manifest.json",
+  "n_files": 5
+}

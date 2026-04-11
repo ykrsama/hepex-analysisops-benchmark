@@ -1,0 +1,4 @@
+{
+  "status": "error",
+  "error": "Agent run failed: ValueError: Tool 'function_name' not found.\nAvailable tools: download_atlas_data_tool, list_local_root_files_tool, inspect_root_schema_tool, load_kinematics_tool, calc_dilepton_mass_tool, calc_system_invariant_mass_tool, fit_peak_tool\n\nPossible causes:\n  1. LLM hallucinated the function name - review agent instruction clarity\n  2. Tool not registered - verify agent.tools list\n  3. Name mismatch - check for typos\n\nSuggested fixes:\n  - Review agent instruction to ensure tool usage is clear\n  - Verify tool is included in agent.tools list\n  - Check for typos in function name"
+}

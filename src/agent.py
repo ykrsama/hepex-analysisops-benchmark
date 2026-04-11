@@ -5,6 +5,7 @@ import shutil
 from typing import Any, Optional
 import json
 import logging
+import re
 
 from pydantic import BaseModel, HttpUrl, ValidationError
 from a2a.server.tasks import TaskUpdater
@@ -16,10 +17,19 @@ from tasks.task_spec import GreenConfig, TaskSpec, load_task_spec
 
 from utils import _utc_now_iso, _new_run_id, _safe_write_json, _safe_write_text
 from utils.atlas_download import ensure_atlas_open_data_downloaded  
-from engine.package_loader import load_spec_bundle, load_solver_prompt
+from engine.package_loader import load_spec_bundle, load_solver_prompt, load_submission_contract, load_private_l1_rubric
 from engine.prompt_render import _builtin_minimal_prompt
 from engine.evaluator import evaluate_task
 from engine.llm_judge import get_judge
+from engine.contract_validator import validate_contract, validate_submission_dir
+from engine.input_access import resolve_input_access, InputAccessError
+from engine.submission_bundle import (
+    SubmissionBundleError,
+    parse_submission_bundle,
+    materialize_submission_bundle,
+)
+from engine.secret_store import SecretStore, patched_env
+from engine.l1_scorer import score_submission
 
 from utils.mock_traces import get_mock_trace
 from dotenv import load_dotenv, find_dotenv
@@ -34,7 +44,7 @@ class EvalRequest(BaseModel):
 
 
 class Agent:
-    required_roles: list[str] = []  # later: ["white_agent"]
+    required_roles: list[str] = []  # later: ["purple_agent"]
 
     def __init__(self):
         load_dotenv(find_dotenv())
@@ -46,10 +56,46 @@ class Agent:
             self.llm_judge = None
 
     def validate_request(self, request: EvalRequest) -> tuple[bool, str]:
-        missing_roles = set(self.required_roles) - set(request.participants.keys())
+        participant_keys = set(request.participants.keys())
+        if "white_agent" in participant_keys:
+            participant_keys.add("purple_agent")
+        missing_roles = set(self.required_roles) - participant_keys
         if missing_roles:
             return False, f"Missing roles: {sorted(missing_roles)}"
         return True, "ok"
+
+    @staticmethod
+    def _resolve_purple_agent_url(request: EvalRequest) -> str:
+        purple_url = request.participants.get("purple_agent")
+        if purple_url is not None:
+            return str(purple_url)
+        legacy_white_url = request.participants.get("white_agent")
+        if legacy_white_url is not None:
+            return str(legacy_white_url)
+        if len(request.participants) == 1:
+            return str(next(iter(request.participants.values())))
+        raise KeyError("Missing participant role: expected 'purple_agent' (or legacy 'white_agent').")
+
+    @staticmethod
+    def _persist_json_if_enabled(path: Path, payload: Any, enabled: bool) -> None:
+        if enabled:
+            _safe_write_json(path, payload)
+
+    @staticmethod
+    def _persist_text_if_enabled(path: Path, text: str, enabled: bool) -> None:
+        if enabled:
+            _safe_write_text(path, text)
+
+    @staticmethod
+    def _raw_response_metadata(response_str: str, *, path: Optional[str] = None) -> dict[str, Any]:
+        preview = response_str[:1000]
+        metadata: dict[str, Any] = {
+            "raw_response_preview": preview,
+            "raw_response_length": len(response_str),
+        }
+        if path:
+            metadata["raw_response_path"] = path
+        return metadata
 
     def _resolve_data_dir(self, cfg: GreenConfig) -> str:
         """
@@ -75,20 +121,250 @@ class Agent:
 
     def _task_eval_dir(self, runs_root: Path, run_id: str, task_id: str) -> Path:
         return runs_root / run_id / task_id
-    
+
+    @staticmethod
+    def _extract_json_from_response(text: str) -> str:
+        code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+        if code_block_match:
+            return code_block_match.group(1).strip()
+        json_match = re.search(r'(\{[\s\S]*\})', text)
+        if json_match:
+            return json_match.group(1)
+        return text
+
+    def _public_task_view(self, task: TaskSpec) -> dict[str, Any]:
+        hidden = {
+            "rubric_path",
+            "eval_ref_path",
+            "judge_prompt_path",
+            "white_prompt_path",
+        }
+        return {k: v for k, v in task.model_dump().items() if k not in hidden}
+
+    def _build_secret_backed_judge(self, secret_store: SecretStore):
+        judge_env = secret_store.get_judge_env()
+        if not judge_env:
+            return None
+        with patched_env(judge_env):
+            try:
+                return get_judge()
+            except RuntimeError:
+                return None
+
+    def _validate_task_capabilities(self, task: TaskSpec, cfg: GreenConfig) -> None:
+        if task.input_strategy == "shared_manifest":
+            if not getattr(task, "needs_data", False):
+                raise InputAccessError(
+                    f"Task {task.id} uses input_strategy=shared_manifest but needs_data is false."
+                )
+            if not getattr(task, "requires_large_input_data", False):
+                raise InputAccessError(
+                    f"Task {task.id} uses input_strategy=shared_manifest but requires_large_input_data is false."
+                )
+            if not cfg.input_access_mode or not cfg.shared_input_dir or not cfg.input_manifest_path:
+                raise InputAccessError(
+                    f"Task {task.id} uses input_strategy=shared_manifest but runtime shared-input config is incomplete."
+                )
+
+        if task.solver_response_mode == "submission_bundle_v1" and not getattr(task, "submission_contract_path", None):
+            raise SubmissionBundleError(
+                f"Task {task.id} uses solver_response_mode=submission_bundle_v1 but has no submission_contract_path."
+            )
+
+        if task.evaluation_mode == "directory_contract_and_private_l1" and not getattr(task, "submission_contract_path", None):
+            raise SubmissionBundleError(
+                f"Task {task.id} uses evaluation_mode=directory_contract_and_private_l1 but has no submission_contract_path."
+            )
+
+    async def _prepare_task_input(
+        self,
+        task: TaskSpec,
+        cfg: GreenConfig,
+        base_data_dir: str,
+        task_eval_dir: Path,
+        updater: TaskUpdater,
+    ) -> tuple[Optional[dict[str, Any]], Optional[dict[str, Any]]]:
+        self._validate_task_capabilities(task, cfg)
+
+        if not getattr(task, "needs_data", False):
+            return None, None
+
+        if task.input_strategy == "shared_manifest":
+            input_manifest = resolve_input_access(task, cfg)
+            data_info = {
+                "shared_input_dir": input_manifest.get("shared_input_dir"),
+                "input_manifest_path": input_manifest.get("input_manifest_path"),
+                "n_files": len(input_manifest.get("files", [])),
+            }
+            _safe_write_json(task_eval_dir / "data_info.json", data_info)
+            await updater.update_status(
+                TaskState.working,
+                new_agent_text_message(f"[{task.id}] Shared input ready: {data_info['n_files']} files."),
+            )
+            return data_info, input_manifest
+
+        if task.input_strategy != "download":
+            raise InputAccessError(f"Unsupported input_strategy for task {task.id}: {task.input_strategy}")
+
+        task_data_dir = self._task_data_dir(base_data_dir, task)
+        task_data_dir.mkdir(parents=True, exist_ok=True)
+
+        if not getattr(task, "reuse_existing", True):
+            try:
+                shutil.rmtree(task_data_dir)
+            except FileNotFoundError:
+                pass
+            os.makedirs(task_data_dir, exist_ok=True)
+
+        await updater.update_status(
+            TaskState.working,
+            new_agent_text_message(f"[{task.id}] Ensuring data in {task_data_dir} ..."),
+        )
+        logger.info(f"[{task.id}] Ensuring data in {task_data_dir} ...")
+
+        workers = int(os.getenv("HEPEX_DOWNLOAD_WORKERS", "6"))
+        data_info = ensure_atlas_open_data_downloaded(
+            skim=task.skim,
+            release=task.release,
+            dataset=task.dataset,
+            protocol=task.protocol,
+            output_dir=task_data_dir,
+            max_files=task.max_files or 0,
+            workers=workers,
+            verbose=True,
+        )
+        _safe_write_json(task_eval_dir / "data_info.json", data_info)
+        n_ok = data_info.get("n_ok", data_info.get("n_files", 0))
+        await updater.update_status(
+            TaskState.working,
+            new_agent_text_message(f"[{task.id}] Data ready: {n_ok} files."),
+        )
+        return data_info, None
+
+    async def _collect_solver_output(
+        self,
+        task: TaskSpec,
+        request: EvalRequest,
+        task_eval_dir: Path,
+        data_info: Optional[dict[str, Any]],
+        input_manifest: Optional[dict[str, Any]],
+        persist_payloads: bool,
+    ) -> dict[str, Any]:
+        if task.solver_response_mode == "submission_trace":
+            try:
+                submission_trace = await self._get_submission_trace(
+                    task,
+                    request,
+                    data_info,
+                    task_eval_dir=task_eval_dir,
+                    persist_payloads=persist_payloads,
+                )
+            except Exception as e:
+                submission_trace = {
+                    "task_id": task.id,
+                    "status": "error",
+                    "error": f"Failed to get submission trace: {type(e).__name__}: {e}",
+                }
+            _safe_write_json(task_eval_dir / "submission_trace.json", submission_trace)
+            return {"submission_trace": submission_trace}
+
+        if task.solver_response_mode == "submission_bundle_v1":
+            contract = load_submission_contract(task)
+            try:
+                raw_bundle = await self._get_submission_bundle(
+                    task,
+                    request,
+                    input_manifest or {},
+                    task_eval_dir=task_eval_dir,
+                    persist_payloads=persist_payloads,
+                )
+                self._persist_json_if_enabled(task_eval_dir / "submission_bundle_raw.json", raw_bundle, persist_payloads)
+                parsed_bundle = parse_submission_bundle(raw_bundle, contract)
+                artifact_manifest = materialize_submission_bundle(parsed_bundle, contract, task_eval_dir)
+                submission_trace = json.loads((task_eval_dir / "submission_trace.json").read_text(encoding="utf-8"))
+                self._persist_json_if_enabled(task_eval_dir / "artifact_manifest.json", artifact_manifest, persist_payloads)
+                return {
+                    "submission_trace": submission_trace,
+                    "artifact_manifest": artifact_manifest,
+                    "submission_bundle_raw": raw_bundle,
+                }
+            except Exception as e:
+                submission_trace = {
+                    "task_id": task.id,
+                    "status": "error",
+                    "error": f"Failed to get submission bundle: {type(e).__name__}: {e}",
+                }
+                if isinstance(e, SubmissionBundleError) and getattr(e, "raw_response", None):
+                    submission_trace.update(
+                        self._raw_response_metadata(
+                            e.raw_response,
+                            path="purple_response_raw.txt" if persist_payloads else None,
+                        )
+                    )
+                _safe_write_json(task_eval_dir / "submission_trace.json", submission_trace)
+                return {"submission_trace": submission_trace}
+
+        raise SubmissionBundleError(
+            f"Unsupported solver_response_mode for task {task.id}: {task.solver_response_mode}"
+        )
+
+    def _evaluate_submission(
+        self,
+        task: TaskSpec,
+        task_eval_dir: Path,
+        submission_trace: dict[str, Any],
+        data_info: Optional[dict[str, Any]],
+    ) -> dict[str, Any]:
+        if task.evaluation_mode == "directory_contract_and_private_l1":
+            contract_report = validate_submission_dir(task, task_eval_dir)
+            secret_store = SecretStore()
+            private_rubric = load_private_l1_rubric(task, secret_store)
+            if private_rubric:
+                return score_submission(
+                    task,
+                    task_eval_dir,
+                    private_rubric,
+                    contract_report,
+                    judge=self._build_secret_backed_judge(secret_store),
+                )
+            return contract_report
+
+        if task.evaluation_mode != "legacy_trace_contract":
+            raise RuntimeError(f"Unsupported evaluation_mode for task {task.id}: {task.evaluation_mode}")
+
+        bundle = load_spec_bundle(task)  # {rubric, eval_ref, judge_prompt, ...}
+        eval_ref = bundle.get("eval_ref", {}) or {}
+
+        if bundle["rubric"]:
+            spec = {
+                "task": task.model_dump(),
+                "rubric": bundle["rubric"],
+                "eval_ref": eval_ref,
+                "judge_prompt": bundle.get("judge_prompt"),
+            }
+            judge = self.llm_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
+            return evaluate_task(
+                spec=spec,
+                trace=submission_trace,
+                judge=judge,
+            )
+        return validate_contract(task, submission_trace)
 
     async def _get_submission_trace(
         self,
         task: TaskSpec,
         request: EvalRequest,
         data_info: Optional[dict[str, Any]],
+        *,
+        task_eval_dir: Optional[Path] = None,
+        persist_payloads: bool = True,
     ) -> dict[str, Any]:
         mode = getattr(task, "mode", "mock")
 
         if mode == "mock":
             return get_mock_trace(task.type, task.id)
 
-        # Future: call white agent
+        # Future: call purple agent
         # return {"task_id": task.id, "status": "error", "error": "call_white not implemented yet"}
 
         # ---- call_white path ----
@@ -124,43 +400,90 @@ class Agent:
         }
 
         message_str = json.dumps(payload, indent=2)
+        if task_eval_dir is not None:
+            self._persist_json_if_enabled(task_eval_dir / "purple_request.json", payload, persist_payloads)
 
-        # 3) send to white agent
-        white_url = str(request.participants["white_agent"])
+        # 3) send to purple agent
+        purple_url = self._resolve_purple_agent_url(request)
 
         response_str = await self.messenger.talk_to_agent(
             message=message_str,
-            url=white_url,
+            url=purple_url,
             new_conversation=True,   # IMPORTANT: new task = new conversation
         )
+        if task_eval_dir is not None:
+            self._persist_text_if_enabled(task_eval_dir / "purple_response_raw.txt", response_str, persist_payloads)
 
         # 4) parse response - handle markdown code blocks
-        def extract_json_from_response(text: str) -> str:
-            """Extract JSON from response, handling markdown code blocks."""
-            # Try to find JSON in markdown code block
-            import re
-            # Match ```json...``` or ```...``` blocks
-            code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
-            if code_block_match:
-                return code_block_match.group(1).strip()
-            # Try to find raw JSON object
-            json_match = re.search(r'(\{[\s\S]*\})', text)
-            if json_match:
-                return json_match.group(1)
-            return text
-        
         try:
-            json_text = extract_json_from_response(response_str)
+            json_text = self._extract_json_from_response(response_str)
             submission_trace = json.loads(json_text)
         except json.JSONDecodeError as e:
-            return {
+            error_payload = {
                 "task_id": task.id,
                 "status": "error",
-                "error": f"White agent returned non-JSON response: {e}",
-                "raw_response": response_str[:1000],
+                "error": f"Purple agent returned non-JSON response: {e}",
             }
+            error_payload.update(
+                self._raw_response_metadata(
+                    response_str,
+                    path="purple_response_raw.txt" if persist_payloads else None,
+                )
+            )
+            return error_payload
 
         return submission_trace
+
+    async def _get_submission_bundle(
+        self,
+        task: TaskSpec,
+        request: EvalRequest,
+        input_manifest: dict[str, Any],
+        *,
+        task_eval_dir: Optional[Path] = None,
+        persist_payloads: bool = True,
+    ) -> dict[str, Any]:
+        contract = load_submission_contract(task)
+        prompt = load_solver_prompt(task) or _builtin_minimal_prompt(task.id, task.type)
+        prompt = prompt.replace("{{TASK_ID}}", task.id).replace("{{MAX_FILES}}", str(task.max_files))
+
+        payload = {
+            "role": "task_request",
+            "task_id": task.id,
+            "task_type": task.type,
+            "level": getattr(task, "level", None),
+            "prompt": prompt,
+            "submission_contract": contract,
+            "data": {
+                "release": task.release,
+                "dataset": task.dataset,
+                "skim": task.skim,
+                "shared_input_dir": input_manifest.get("shared_input_dir"),
+                "input_manifest_path": input_manifest.get("input_manifest_path"),
+                "read_only_for_solver": True,
+            },
+            "constraints": {
+                **(getattr(task, "constraints", {}) or {}),
+                "response_format": "submission_bundle_v1",
+                "allow_purple_network": False,
+            },
+        }
+        if task_eval_dir is not None:
+            self._persist_json_if_enabled(task_eval_dir / "purple_request.json", payload, persist_payloads)
+        purple_url = self._resolve_purple_agent_url(request)
+        response_str = await self.messenger.talk_to_agent(
+            message=json.dumps(payload, indent=2),
+            url=purple_url,
+            new_conversation=True,
+        )
+        if task_eval_dir is not None:
+            self._persist_text_if_enabled(task_eval_dir / "purple_response_raw.txt", response_str, persist_payloads)
+        try:
+            return json.loads(self._extract_json_from_response(response_str))
+        except json.JSONDecodeError as e:
+            error = SubmissionBundleError(f"Purple agent returned non-JSON response: {e}")
+            error.raw_response = response_str
+            raise error from e
 
 
     async def run(self, message: Message, updater: TaskUpdater) -> None:
@@ -207,6 +530,8 @@ class Agent:
             "score_total": 0.0,                 # sum of normalized per task
             "score_max": float(len(cfg.task_dirs)), # maximum normalized sum
         }
+        self._persist_json_if_enabled(runs_root / run_id / "eval_request.json", request.model_dump(mode="json"), cfg.persist_payloads)
+        self._persist_json_if_enabled(runs_root / run_id / "green_config.json", cfg.model_dump(mode="json"), cfg.persist_payloads)
 
         # 3) Run tasks sequentially
         task_specs = [load_task_spec(d) for d in cfg.task_dirs]
@@ -235,123 +560,84 @@ class Agent:
             )
             logger.info(f"Starting Task {idx}/{len(cfg.task_dirs)}: {task.type} ({task.id})")
 
-            # 3a) Ensure data (optional)
+            # 3a) Resolve data access
             data_info: Optional[dict[str, Any]] = None
-            if getattr(task, "needs_data", False):
-                task_data_dir = self._task_data_dir(base_data_dir, task)
-                task_data_dir.mkdir(parents=True, exist_ok=True)
-
-                if data_info is not None:
-                    _safe_write_json(task_eval_dir / "data_info.json", data_info)
-
-                logger.debug(f"Data info for task {task.id}: {data_info}")
-
-
-                if not getattr(task, "reuse_existing", True):
-                    # Force a clean re-download for this task configuration
-                    try:
-                        shutil.rmtree(task_data_dir)
-                    except FileNotFoundError:
-                        pass
-                    os.makedirs(task_data_dir, exist_ok=True)
-
-                await updater.update_status(
-                    TaskState.working,
-                    new_agent_text_message(f"[{task.id}] Ensuring data in {task_data_dir} ..."),
-                )
-                logger.info(f"[{task.id}] Ensuring data in {task_data_dir} ...")
-
-                try:
-                    # NOTE: workers not in TaskSpec -> pick a sane default or read env
-                    workers = int(os.getenv("HEPEX_DOWNLOAD_WORKERS", "6"))
-                    data_info = ensure_atlas_open_data_downloaded(
-                        skim=task.skim,
-                        release=task.release,
-                        dataset=task.dataset,
-                        protocol=task.protocol,
-                        output_dir=task_data_dir,
-                        max_files=task.max_files or 0,
-                        workers=workers,
-                        verbose=True,
-                    )
-                except Exception as e:
-                    task_report = {
-                        "task_id": task.id,
-                        "type": task.type,
-                        "status": "error",
-                        "error": f"Data download failed: {type(e).__name__}: {e}",
-                        "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
-                    }
-                    overall["tasks"].append(task_report)
-
-                    await updater.add_artifact(
-                        parts=[
-                            Part(root=TextPart(text=f"[{task.id}] ERROR: data download failed.")),
-                            Part(root=DataPart(data=task_report)),
-                        ],
-                        name=f"Result-{task.id}",
-                    )
-                    continue
-
-                n_ok = data_info.get("n_ok", data_info.get("n_files", 0))
-                await updater.update_status(
-                    TaskState.working,
-                    new_agent_text_message(f"[{task.id}] Data ready: {n_ok} files."),
-                )
-
-            # 3b) Get submission trace
+            input_manifest: Optional[dict[str, Any]] = None
             try:
-                submission_trace = await self._get_submission_trace(task, request, data_info)
-            except Exception as e:
-                submission_trace = {
+                data_info, input_manifest = await self._prepare_task_input(
+                    task,
+                    cfg,
+                    base_data_dir,
+                    task_eval_dir,
+                    updater,
+                )
+            except (InputAccessError, SubmissionBundleError) as e:
+                task_report = {
                     "task_id": task.id,
+                    "type": task.type,
                     "status": "error",
-                    "error": f"Failed to get submission trace: {type(e).__name__}: {e}",
+                    "error": str(e),
+                    "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
                 }
-            
-            _safe_write_json(task_eval_dir / "submission_trace.json", submission_trace)
+                overall["tasks"].append(task_report)
+                await updater.add_artifact(
+                    parts=[
+                        Part(root=TextPart(text=f"[{task.id}] ERROR: {e}")),
+                        Part(root=DataPart(data=task_report)),
+                    ],
+                    name=f"Result-{task.id}",
+                )
+                continue
+            except Exception as e:
+                task_report = {
+                    "task_id": task.id,
+                    "type": task.type,
+                    "status": "error",
+                    "error": f"Data preparation failed: {type(e).__name__}: {e}",
+                    "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
+                }
+                overall["tasks"].append(task_report)
+                await updater.add_artifact(
+                    parts=[
+                        Part(root=TextPart(text=f"[{task.id}] ERROR: data preparation failed.")),
+                        Part(root=DataPart(data=task_report)),
+                    ],
+                    name=f"Result-{task.id}",
+                )
+                continue
+
+            # 3b) Get solver outputs
+            collected = await self._collect_solver_output(
+                task,
+                request,
+                task_eval_dir,
+                data_info,
+                input_manifest,
+                cfg.persist_payloads,
+            )
+            submission_trace = collected["submission_trace"]
 
 
             # persist judge input snapshot (what engine sees)
             # Sensitive eval fields are stripped so this file is safe to write
             # in a public-facing run directory.
-            _SENSITIVE_TASK_FIELDS = {
-                "rubric_path", "eval_ref_path", "judge_prompt_path", "white_prompt_path"
-            }
             judge_input = {
-                "task_spec": {
-                    k: v for k, v in task.model_dump().items()
-                    if k not in _SENSITIVE_TASK_FIELDS
-                },
+                "task_spec": self._public_task_view(task),
                 "data_info": data_info,
-                "submission_trace": submission_trace,
+                "submission_trace": submission_trace
+                if task.solver_response_mode == "submission_trace"
+                else {"path": "submission_trace.json"},
             }
             _safe_write_json(task_eval_dir / "judge_input.json", judge_input)
 
             # 3c) Evaluate
             try:
-
-                bundle = load_spec_bundle(task)  # {rubric, eval_ref, judge_prompt, ...}
-                eval_ref = bundle.get("eval_ref", {}) or {}
-
-                if bundle["rubric"]:
-                    # --- V1 path: private rubric available → full scoring ---
-                    spec = {
-                        "task": task.model_dump(),
-                        "rubric": bundle["rubric"],
-                        "eval_ref": eval_ref,
-                        "judge_prompt": bundle.get("judge_prompt"),
-                    }
-                    judge = self.llm_judge if (spec["rubric"].get("llm_checks") and spec.get("judge_prompt")) else None
-                    report = evaluate_task(
-                        spec=spec,
-                        trace=submission_trace,
-                        judge=judge,
-                    )
-                else:
-                    # --- V2 path: no rubric → public-safe contract validation ---
-                    from engine.contract_validator import validate_contract
-                    report = validate_contract(task, submission_trace)
+                report = self._evaluate_submission(
+                    task,
+                    task_eval_dir,
+                    submission_trace,
+                    data_info,
+                )
 
             except Exception as e:
                 err_text = f"{type(e).__name__}: {e}"

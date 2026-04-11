@@ -122,3 +122,25 @@ def load_solver_prompt(task: Any) -> Optional[str]:
             return _read_text(p)
 
     return None
+
+
+def load_submission_contract(task: Any) -> Dict[str, Any]:
+    """Load the public submission contract for a task."""
+    spec_dir = _safe_get(task, "spec_dir")
+    contract_rel = _safe_get(task, "submission_contract_path", "submission_contract.yaml")
+    if not spec_dir or not contract_rel:
+        return {}
+    p = _resolve_path(spec_dir, contract_rel)
+    if not p.exists():
+        return {}
+    return _read_yaml(p)
+
+
+def load_private_l1_rubric(task: Any, secret_store: Any) -> Dict[str, Any]:
+    """Load a private L1 rubric from the secret store if available."""
+    if secret_store is None:
+        return {}
+    task_id = _safe_get(task, "id")
+    contract = load_submission_contract(task)
+    contract_hash = secret_store.contract_hash(contract) if contract else None
+    return secret_store.get_task_private_rubric(task_id, public_contract_hash=contract_hash)

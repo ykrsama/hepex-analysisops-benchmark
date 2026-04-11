@@ -1,3 +1,4 @@
+import asyncio
 import json
 from uuid import uuid4
 
@@ -53,7 +54,19 @@ async def send_message(
     """Returns dict with context_id, response and status (if exists)"""
     async with httpx.AsyncClient(timeout=timeout) as httpx_client:
         resolver = A2ACardResolver(httpx_client=httpx_client, base_url=base_url)
-        agent_card = await resolver.get_agent_card()
+        last_error = None
+        agent_card = None
+        for attempt in range(5):
+            try:
+                agent_card = await resolver.get_agent_card()
+                break
+            except Exception as exc:
+                last_error = exc
+                if attempt == 4:
+                    raise
+                await asyncio.sleep(2.0)
+        if agent_card is None:
+            raise last_error or RuntimeError(f"Failed to resolve agent card for {base_url}")
         config = ClientConfig(
             httpx_client=httpx_client,
             streaming=streaming,
