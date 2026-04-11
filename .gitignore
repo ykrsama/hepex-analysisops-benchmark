@@ -3,6 +3,8 @@ reference/
 .vscode/
 data/
 output/
+.DS_Store
+private*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
