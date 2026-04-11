@@ -6,95 +6,124 @@ Your job is to generate TWO files:
 1. l1_prompt.md
 2. private_rubric_l1.yaml
 
-L1 means Directed Execution:
-- the task should be explicit
-- the agent should mainly succeed by following instructions
-- it is acceptable to specify key cuts, key observable, and key workflow stages
+--------------------------------
+L1 Definition: Directed Execution
+--------------------------------
+- The workflow is explicitly specified
+- Key physics cuts, thresholds, observable, and model SHOULD be included
+- The agent succeeds primarily by correct execution
 
-L1 weights:
-- execution: 0.4
-- pipeline: 0.2
-- reasoning: 0.1
-- implementation: 0.3
-- analysis: 0.0
-- validation: 0.0
+--------------------------------
+CRITICAL DESIGN RULES
+--------------------------------
 
-Important design rules:
-- L1 may include specific thresholds if they are central to the intended baseline workflow
-- L1 should not be tutorial-bloated
-- L1 private rubric must be scorable
-- Do not require exact replication of library choices or plotting style
-- Use tolerances for numeric checks
-- Be conservative when evidence is missing
+1. DIMENSION BOUNDARY (STRICT)
 
-The private rubric must integrate these ideas:
-- workflow_spec style structure:
-  expected scientific stages, cut ordering, dependencies
-- eval_ref style checks:
-  expected result range or tolerance when appropriate
-- rubric style scoring:
-  weighted checks under dimensions
-- judge-ready structure:
-  clear descriptions and conditions usable by deterministic or LLM-based judging
+Each scoring dimension MUST ONLY evaluate:
 
-Output format exactly:
+- execution:
+  task runs + required outputs exist (NO physics correctness)
+
+- pipeline:
+  workflow stages, ordering, dependencies
+
+- implementation:
+  correctness of calculations, selections, formulas
+
+- reasoning:
+  explanation of why steps are taken
+
+- analysis:
+  quality of scientific result (e.g. peak detection)
+
+- validation:
+  cross-checks or robustness (minimal in L1)
+
+DO NOT mix dimensions.
+
+--------------------------------
+
+2. CHECK TYPE DEFINITIONS (STRICT)
+
+Each check MUST be one of:
+
+- deterministic:
+  structured field or numeric check (preferred)
+
+- structural:
+  presence / ordering / dependency
+
+- heuristic:
+  weak approximate pattern (use sparingly)
+
+- llm_judge:
+  semantic evaluation (ONLY allowed in reasoning)
+
+--------------------------------
+
+3. CONDITION FORMAT (MANDATORY)
+
+ALL conditions MUST be machine-readable.
+
+DO NOT use natural language.
+
+Use structured format like:
+
+condition:
+  required_outputs: [...]
+  numeric_ranges: ...
+  thresholds: ...
+  dependencies: ...
+
+--------------------------------
+
+4. MACHINE-READABLE OUTPUTS (MANDATORY)
+
+The L1 prompt MUST require:
+
+- submission_trace.json:
+    includes cuts, cutflow, metadata
+
+- fit_result.json:
+    includes at least:
+      - mu (peak position)
+      - sigma
+      - model description
+
+--------------------------------
+
+5. ANALYSIS IN L1
+
+L1 MUST include a SMALL analysis component.
+
+The Higgs peak MUST be evaluated via NUMERIC checks.
+
+Example:
+
+condition:
+  fit_result:
+    mu:
+      expected_range: [123, 127]
+
+--------------------------------
+
+6. SCORING STYLE
+
+- Use weighted checks
+- Be conservative if missing evidence
+- Use tolerances, NOT exact equality
+
+--------------------------------
+
+Output format EXACTLY:
 
 === FILE: l1_prompt.md ===
 ...
 
 === FILE: private_rubric_l1.yaml ===
-version: 1
-weights:
-  execution: 0.4
-  pipeline: 0.2
-  reasoning: 0.1
-  implementation: 0.3
-  analysis: 0.0
-  validation: 0.0
+(version, weights, checks, scoring...)
 
-checks:
-  execution:
-    - id: ...
-      type: deterministic | structural | heuristic | llm_judge
-      description: ...
-      condition: ...
-      score: ...
-  pipeline:
-    - id: ...
-      type: ...
-      description: ...
-      condition: ...
-      score: ...
-  reasoning:
-    - id: ...
-      type: ...
-      description: ...
-      judge_instruction: ...
-      score: ...
-  implementation:
-    - id: ...
-      type: ...
-      description: ...
-      condition: ...
-      score: ...
-  analysis:
-    - id: ...
-      type: ...
-      description: ...
-      condition: ...
-      score: ...
-  validation:
-    - id: ...
-      type: ...
-      description: ...
-      condition: ...
-      score: ...
-
-scoring:
-  aggregation: weighted_sum
-  missing_evidence_policy: conservative
-
-Only output the two file blocks.
+--------------------------------
 
 Here is the reference analysis:
 
