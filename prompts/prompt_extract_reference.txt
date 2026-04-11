@@ -1,25 +1,25 @@
-You are helping convert a notebook-style Python analysis script into a clean benchmark reference document.
+You are converting a notebook-style Python analysis script into a benchmark-quality scientific reference document.
 
 The input is a Python file converted from a Jupyter notebook. It may contain:
 - markdown comments
-- explanatory text
+- explanatory narrative
 - code cells
-- plotting boilerplate
 - installation instructions
-- tutorial-style educational content
+- plotting boilerplate
+- tutorial language
+- pedagogical digressions
 
 Your task is to extract the core scientific workflow and rewrite it as a clean markdown file named `reference_analysis.md`.
 
-Output requirements:
-- Output only markdown
-- Do not include JSON
-- Do not include code blocks unless absolutely necessary
-- Do not include notebook cell markers such as "# %%"
-- Do not include package installation instructions
-- Do not include image links, HTML, or UI instructions
-- Do not include long plotting-style details unless they are scientifically important
+Your output must be optimized for downstream benchmark generation. It should describe the workflow clearly, but it must NOT overfit to one exact implementation or leak unnecessary solution details.
 
-The output must use exactly these sections:
+================================
+Output requirements
+================================
+
+Output only markdown.
+
+Use exactly these sections and headings:
 
 # Objective
 A short description of the physics goal.
@@ -40,19 +40,45 @@ The core observable(s) constructed for the analysis.
 The main workflow steps used to turn selected events into a result.
 
 # Inference
-How the result is extracted (for example peak finding, fit, likelihood, comparison to expectation).
+How the result is extracted (for example peak finding, fitting, likelihood comparison, or signal extraction).
 
 # Interpretation
 What physical conclusion the analysis is trying to support.
 
-Additional rules:
-- Focus on the analysis logic, not implementation noise
-- Preserve physics motivation when present
-- Summarize long code regions into short scientific descriptions
-- Keep the result concise and benchmark-friendly
-- If the input is tutorial-like, strip teaching language and keep only the actual analysis workflow
-- If a fit model is used, mention it briefly
-- If cuts are motivated by signal/background separation, preserve that motivation
+================================
+Critical constraints
+================================
+
+1. Keep the document concise, clean, and benchmark-friendly.
+2. Focus on scientific workflow, not notebook mechanics.
+3. Strip:
+   - package installation
+   - notebook cell markers
+   - image links
+   - HTML
+   - UI instructions
+   - excessive plotting aesthetics
+   - teaching-only commentary
+4. Preserve physics motivation when scientifically meaningful.
+5. Summarize long code blocks into short workflow descriptions.
+6. Do not include unnecessary implementation detail that would lock in one exact solution.
+7. Do not over-specify exact parameter values unless they are central to the scientific logic.
+8. If exact cuts or fit models appear in the script, retain them only when they are clearly part of the intended reference workflow; otherwise summarize them as reasonable physics-motivated selections.
+9. The result should read like a reference workflow, not a hidden answer key.
+10. The analysis should remain specific enough that benchmark prompts and rubrics can be derived from it.
+
+================================
+Quality target
+================================
+
+A strong output should:
+- preserve the scientific objective
+- preserve the workflow stages
+- preserve the role of key observables and selections
+- preserve the type of inference used
+- avoid excessive leakage of exact implementation details
+- avoid sounding like a tutorial
+- avoid sounding like a final judged solution
 
 Here is the notebook-style Python script:
 
