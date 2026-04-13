@@ -64,6 +64,18 @@ class TaskSpec(BaseModel):
         return p
 
 
+class TaskRuntimeOverride(BaseModel):
+    enabled: Optional[bool] = None
+    mode: Optional[Literal["mock", "call_white"]] = None
+    input_strategy: Optional[Literal["download", "shared_manifest"]] = None
+    max_files: Optional[int] = None
+    reuse_existing: Optional[bool] = None
+    cache: Optional[bool] = None
+    release: Optional[str] = None
+    dataset: Optional[str] = None
+    skim: Optional[str] = None
+
+
 class GreenConfig(BaseModel):
     data_dir: str = "/tmp/atlas_data_cache"
     # V2: task directories live under tasks_public/ with numeric prefix.
@@ -74,6 +86,7 @@ class GreenConfig(BaseModel):
     input_manifest_path: Optional[str] = None
     allow_green_download: bool = False
     persist_payloads: bool = True
+    task_overrides: dict[str, TaskRuntimeOverride] = Field(default_factory=dict)
 
 
 def load_task_spec(spec_dir: str | Path) -> TaskSpec:

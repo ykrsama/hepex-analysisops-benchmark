@@ -13,7 +13,7 @@ from a2a.types import Message, TaskState, Part, TextPart, DataPart
 from a2a.utils import get_message_text, new_agent_text_message
 
 from messenger import Messenger
-from tasks.task_spec import GreenConfig, TaskSpec, load_task_spec
+from tasks.task_spec import GreenConfig, TaskRuntimeOverride, TaskSpec, load_task_spec
 
 from utils import _utc_now_iso, _new_run_id, _safe_write_json, _safe_write_text
 from utils.atlas_download import ensure_atlas_open_data_downloaded  
@@ -29,9 +29,9 @@ from engine.submission_bundle import (
     materialize_submission_bundle,
 )
 from engine.secret_store import SecretStore, patched_env
-from engine.l1_scorer import score_submission
+from engine.l1_scorer import rubric_unavailable_report, score_submission
 
-from utils.mock_traces import get_mock_trace
+from utils.mock_traces import get_mock_bundle, get_mock_trace
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
@@ -119,6 +119,40 @@ class Agent:
     def _runs_root(self, base_data_dir: str) -> Path:
         return Path(base_data_dir) / "runs"
 
+    @staticmethod
+    def _has_runtime_shared_input(cfg: GreenConfig) -> bool:
+        return bool(cfg.input_access_mode and cfg.shared_input_dir and cfg.input_manifest_path)
+
+    def _build_mock_input_manifest(self, task: TaskSpec, task_eval_dir: Path) -> dict[str, Any]:
+        shared_dir = task_eval_dir / "mock_shared_input"
+        shared_dir.mkdir(parents=True, exist_ok=True)
+
+        root_path = shared_dir / "events.root"
+        if not root_path.exists():
+            _safe_write_text(root_path, "placeholder")
+
+        manifest_path = shared_dir / "input_manifest.json"
+        manifest = {
+            "task_id": task.id,
+            "release": getattr(task, "release", None),
+            "dataset": getattr(task, "dataset", None),
+            "skim": getattr(task, "skim", None),
+            "shared_input_dir": str(shared_dir),
+            "input_manifest_path": str(manifest_path),
+            "files": [
+                {
+                    "logical_name": root_path.name,
+                    "path": str(root_path),
+                    "size_bytes": root_path.stat().st_size,
+                }
+            ],
+            "read_only_for_solver": True,
+            "input_access_mode": "local_shared_mount",
+            "synthetic_for_mock_mode": True,
+        }
+        _safe_write_json(manifest_path, manifest)
+        return manifest
+
     def _task_eval_dir(self, runs_root: Path, run_id: str, task_id: str) -> Path:
         return runs_root / run_id / task_id
 
@@ -141,6 +175,30 @@ class Agent:
         }
         return {k: v for k, v in task.model_dump().items() if k not in hidden}
 
+    @staticmethod
+    def _task_override_payload(override: TaskRuntimeOverride) -> dict[str, Any]:
+        return override.model_dump(exclude_none=True)
+
+    def _apply_task_runtime_override(
+        self,
+        task: TaskSpec,
+        cfg: GreenConfig,
+    ) -> tuple[Optional[TaskSpec], dict[str, Any]]:
+        override = (cfg.task_overrides or {}).get(task.id)
+        if override is None:
+            return task, {}
+
+        applied = self._task_override_payload(override)
+        if applied.get("enabled") is False:
+            return None, applied
+
+        updates = {k: v for k, v in applied.items() if k != "enabled"}
+        if not updates:
+            return task, applied
+
+        effective = TaskSpec.model_validate({**task.model_dump(), **updates})
+        return effective, applied
+
     def _build_secret_backed_judge(self, secret_store: SecretStore):
         judge_env = secret_store.get_judge_env()
         if not judge_env:
@@ -161,7 +219,7 @@ class Agent:
                 raise InputAccessError(
                     f"Task {task.id} uses input_strategy=shared_manifest but requires_large_input_data is false."
                 )
-            if not cfg.input_access_mode or not cfg.shared_input_dir or not cfg.input_manifest_path:
+            if not self._has_runtime_shared_input(cfg) and getattr(task, "mode", "mock") != "mock":
                 raise InputAccessError(
                     f"Task {task.id} uses input_strategy=shared_manifest but runtime shared-input config is incomplete."
                 )
@@ -190,7 +248,14 @@ class Agent:
             return None, None
 
         if task.input_strategy == "shared_manifest":
-            input_manifest = resolve_input_access(task, cfg)
+            if self._has_runtime_shared_input(cfg):
+                input_manifest = resolve_input_access(task, cfg)
+            elif getattr(task, "mode", "mock") == "mock":
+                input_manifest = self._build_mock_input_manifest(task, task_eval_dir)
+            else:
+                raise InputAccessError(
+                    f"Task {task.id} uses input_strategy=shared_manifest but runtime shared-input config is incomplete."
+                )
             data_info = {
                 "shared_input_dir": input_manifest.get("shared_input_dir"),
                 "input_manifest_path": input_manifest.get("input_manifest_path"),
@@ -206,38 +271,21 @@ class Agent:
         if task.input_strategy != "download":
             raise InputAccessError(f"Unsupported input_strategy for task {task.id}: {task.input_strategy}")
 
-        task_data_dir = self._task_data_dir(base_data_dir, task)
-        task_data_dir.mkdir(parents=True, exist_ok=True)
-
-        if not getattr(task, "reuse_existing", True):
-            try:
-                shutil.rmtree(task_data_dir)
-            except FileNotFoundError:
-                pass
-            os.makedirs(task_data_dir, exist_ok=True)
-
-        await updater.update_status(
-            TaskState.working,
-            new_agent_text_message(f"[{task.id}] Ensuring data in {task_data_dir} ..."),
-        )
-        logger.info(f"[{task.id}] Ensuring data in {task_data_dir} ...")
-
-        workers = int(os.getenv("HEPEX_DOWNLOAD_WORKERS", "6"))
-        data_info = ensure_atlas_open_data_downloaded(
-            skim=task.skim,
-            release=task.release,
-            dataset=task.dataset,
-            protocol=task.protocol,
-            output_dir=task_data_dir,
-            max_files=task.max_files or 0,
-            workers=workers,
-            verbose=True,
-        )
+        data_info = {
+            "release": task.release,
+            "dataset": task.dataset,
+            "skim": task.skim,
+            "protocol": task.protocol,
+            "max_files": task.max_files,
+            "download_managed_by": "solver",
+        }
         _safe_write_json(task_eval_dir / "data_info.json", data_info)
-        n_ok = data_info.get("n_ok", data_info.get("n_files", 0))
         await updater.update_status(
             TaskState.working,
-            new_agent_text_message(f"[{task.id}] Data ready: {n_ok} files."),
+            new_agent_text_message(
+                f"[{task.id}] Delegating data download to solver: "
+                f"{task.release}/{task.dataset}/{task.skim} (max_files={task.max_files})."
+            ),
         )
         return data_info, None
 
@@ -317,6 +365,9 @@ class Agent:
     ) -> dict[str, Any]:
         if task.evaluation_mode == "directory_contract_and_private_l1":
             contract_report = validate_submission_dir(task, task_eval_dir)
+            if contract_report.get("status") != "ok":
+                return contract_report
+
             secret_store = SecretStore()
             private_rubric = load_private_l1_rubric(task, secret_store)
             if private_rubric:
@@ -327,7 +378,14 @@ class Agent:
                     contract_report,
                     judge=self._build_secret_backed_judge(secret_store),
                 )
-            return contract_report
+            return rubric_unavailable_report(
+                task,
+                contract_report,
+                reason=(
+                    "Task requires private-rubric scoring, but no matching private rubric was "
+                    "available from GREEN_SECRETS_JSON."
+                ),
+            )
 
         if task.evaluation_mode != "legacy_trace_contract":
             raise RuntimeError(f"Unsupported evaluation_mode for task {task.id}: {task.evaluation_mode}")
@@ -389,12 +447,16 @@ class Agent:
             "role": "task_request",
             "task_id": task.id,
             "task_type": task.type,
+            "mode": mode,
             "prompt": prompt,
             "data": {
                 "files": files[: task.max_files],
                 "release": task.release,
                 "dataset": task.dataset,
                 "skim": task.skim,
+                "protocol": task.protocol,
+                "max_files": task.max_files,
+                "input_strategy": task.input_strategy,
             },
             "constraints": getattr(task, "constraints", {}),
         }
@@ -443,6 +505,13 @@ class Agent:
         task_eval_dir: Optional[Path] = None,
         persist_payloads: bool = True,
     ) -> dict[str, Any]:
+        mode = getattr(task, "mode", "mock")
+        if mode == "mock":
+            bundle = get_mock_bundle(task.type, task.id)
+            if bundle.get("status") == "error":
+                raise SubmissionBundleError(bundle.get("error", f"Unknown mock bundle error for task {task.id}"))
+            return bundle
+
         contract = load_submission_contract(task)
         prompt = load_solver_prompt(task) or _builtin_minimal_prompt(task.id, task.type)
         prompt = prompt.replace("{{TASK_ID}}", task.id).replace("{{MAX_FILES}}", str(task.max_files))
@@ -451,6 +520,7 @@ class Agent:
             "role": "task_request",
             "task_id": task.id,
             "task_type": task.type,
+            "mode": mode,
             "level": getattr(task, "level", None),
             "prompt": prompt,
             "submission_contract": contract,
@@ -458,6 +528,9 @@ class Agent:
                 "release": task.release,
                 "dataset": task.dataset,
                 "skim": task.skim,
+                "protocol": task.protocol,
+                "max_files": task.max_files,
+                "input_strategy": task.input_strategy,
                 "shared_input_dir": input_manifest.get("shared_input_dir"),
                 "input_manifest_path": input_manifest.get("input_manifest_path"),
                 "read_only_for_solver": True,
@@ -522,20 +595,32 @@ class Agent:
 
         await updater.update_status(TaskState.working, new_agent_text_message("Starting tasks..."))
 
+        task_runs: list[tuple[TaskSpec, dict[str, Any]]] = []
+        for task_dir in cfg.task_dirs:
+            loaded = load_task_spec(task_dir)
+            effective_task, applied_overrides = self._apply_task_runtime_override(loaded, cfg)
+            if effective_task is None:
+                await updater.update_status(
+                    TaskState.working,
+                    new_agent_text_message(f"[{loaded.id}] Skipped by config.task_overrides."),
+                )
+                logger.info(f"Skipping task {loaded.id} due to runtime override: {applied_overrides}")
+                continue
+            task_runs.append((effective_task, applied_overrides))
+
         overall: dict[str, Any] = {
             "run_id": run_id,                              
             "run_dir": str((runs_root / run_id).resolve()),
             "data_dir": os.path.abspath(base_data_dir),
             "tasks": [],
             "score_total": 0.0,                 # sum of normalized per task
-            "score_max": float(len(cfg.task_dirs)), # maximum normalized sum
+            "score_max": float(len(task_runs)), # maximum normalized sum
         }
         self._persist_json_if_enabled(runs_root / run_id / "eval_request.json", request.model_dump(mode="json"), cfg.persist_payloads)
         self._persist_json_if_enabled(runs_root / run_id / "green_config.json", cfg.model_dump(mode="json"), cfg.persist_payloads)
 
         # 3) Run tasks sequentially
-        task_specs = [load_task_spec(d) for d in cfg.task_dirs]
-        for idx, task in enumerate(task_specs, start=1):
+        for idx, (task, applied_overrides) in enumerate(task_runs, start=1):
             task_eval_dir = self._task_eval_dir(runs_root, run_id, task.id)  
             task_eval_dir.mkdir(parents=True, exist_ok=True)                
 
@@ -551,14 +636,15 @@ class Agent:
                 "protocol": getattr(task, "protocol", None),
                 "max_files": getattr(task, "max_files", None),
                 "reuse_existing": getattr(task, "reuse_existing", None),
+                "task_overrides_applied": applied_overrides,
             }
             _safe_write_json(task_eval_dir / "meta.json", meta)
 
             await updater.update_status(
                 TaskState.working,
-                new_agent_text_message(f"Task {idx}/{len(cfg.task_dirs)}: {task.type} ({task.id})"),
+                new_agent_text_message(f"Task {idx}/{len(task_runs)}: {task.type} ({task.id})"),
             )
-            logger.info(f"Starting Task {idx}/{len(cfg.task_dirs)}: {task.type} ({task.id})")
+            logger.info(f"Starting Task {idx}/{len(task_runs)}: {task.type} ({task.id})")
 
             # 3a) Resolve data access
             data_info: Optional[dict[str, Any]] = None
@@ -577,6 +663,7 @@ class Agent:
                     "type": task.type,
                     "status": "error",
                     "error": str(e),
+                    "task_overrides_applied": applied_overrides,
                     "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
                 }
                 overall["tasks"].append(task_report)
@@ -594,6 +681,7 @@ class Agent:
                     "type": task.type,
                     "status": "error",
                     "error": f"Data preparation failed: {type(e).__name__}: {e}",
+                    "task_overrides_applied": applied_overrides,
                     "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
                 }
                 overall["tasks"].append(task_report)
@@ -648,12 +736,14 @@ class Agent:
                     "type": task.type,
                     "status": "error",
                     "error": f"Engine failed: {err_text}",
+                    "task_overrides_applied": applied_overrides,
                     "final": {"total_score": 0.0, "max_score": 1.0, "normalized_score": 0.0},
                 }
 
             # Ensure task_id and type are always in the report
             report["task_id"] = task.id
             report["type"] = task.type
+            report["task_overrides_applied"] = applied_overrides
 
             # 3d) Normalize and accumulate
             final = report.setdefault("final", {})

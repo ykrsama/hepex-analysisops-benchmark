@@ -7,12 +7,12 @@ needs_data: true
 release: 2025e-13tev-beta
 dataset: data
 skim: GamGam
-max_files: 5
+max_files: 1
 
 requires_large_input_data: true
 supports_scenario_shared_input: true
 supports_local_shared_input: true
-input_strategy: shared_manifest
+input_strategy: download
 solver_response_mode: submission_bundle_v1
 evaluation_mode: directory_contract_and_private_l1
 

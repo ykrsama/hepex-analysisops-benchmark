@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional, Tuple
 from .llm_judge import BaseJudge
 
 
+LEVEL_DIMENSIONS: Dict[str, List[str]] = {
+    "l1": ["execution", "pipeline", "implementation", "reasoning", "analysis", "validation"],
+}
+
+
 def _load_json_if_exists(path: Path) -> Dict[str, Any]:
     if not path.exists():
         return {}
@@ -228,6 +233,58 @@ def _score_llm_judge(
     return (1.0 if passed else 0.0, {"judge_result": result.parsed})
 
 
+def expected_dimensions(task: Any, rubric: Optional[Dict[str, Any]] = None) -> List[str]:
+    dims: List[str] = []
+    level = getattr(task, "level", None)
+    if isinstance(level, str):
+        dims.extend(LEVEL_DIMENSIONS.get(level, []))
+
+    rubric = rubric or {}
+    weights = rubric.get("weights", {}) or {}
+    checks = rubric.get("checks", {}) or {}
+
+    for source in (weights.keys(), checks.keys()):
+        for dimension in source:
+            if isinstance(dimension, str) and dimension not in dims:
+                dims.append(dimension)
+
+    return dims
+
+
+def rubric_unavailable_report(
+    task: Any,
+    contract_report: Dict[str, Any],
+    *,
+    reason: str,
+) -> Dict[str, Any]:
+    dimensions = expected_dimensions(task)
+    dimension_scores = {dimension: 0.0 for dimension in dimensions}
+    task_id = getattr(task, "id", "unknown")
+    task_type = getattr(task, "type", "unknown")
+
+    return {
+        "task_id": task_id,
+        "type": task_type,
+        "status": "rubric_unavailable",
+        "hard_checks_passed": bool(contract_report.get("hard_checks_passed", False)),
+        "contract_report": contract_report,
+        "dimension_scores": dimension_scores,
+        "check_results": [],
+        "final": {
+            "total_score": 0.0,
+            "max_score": 1.0,
+            "normalized_score": 0.0,
+        },
+        "issues": list(contract_report.get("issues", [])) + [
+            {
+                "severity": "error",
+                "code": "PRIVATE_RUBRIC_UNAVAILABLE",
+                "message": reason,
+            }
+        ],
+    }
+
+
 def score_submission(
     task: Any,
     submission_dir: Path,
@@ -244,7 +301,9 @@ def score_submission(
     }
     interpretation = _load_markdown_if_exists(submission_dir / "interpretation.md")
 
-    dimension_scores: Dict[str, float] = {}
+    dimension_scores: Dict[str, float] = {
+        dimension: 0.0 for dimension in expected_dimensions(task, rubric)
+    }
     check_results: List[Dict[str, Any]] = []
 
     for dimension, checks in (rubric.get("checks", {}) or {}).items():

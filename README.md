@@ -31,6 +31,8 @@ docker pull ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest
 # Or build locally
 docker build -t hepex-green-agent:local .
 
+docker build --platform linux/amd64 -t hepex-green-agent-local:v1 .
+
 # Run (listens on port 9009)
 docker run -p 9009:9009 ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest
 ```

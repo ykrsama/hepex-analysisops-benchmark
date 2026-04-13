@@ -12,10 +12,11 @@ from a2a.utils import new_agent_text_message
 from agent import Agent
 from engine.contract_validator import validate_submission_dir
 from engine.input_access import InputAccessError, resolve_input_access
-from engine.package_loader import load_submission_contract
+from engine.package_loader import load_private_l1_rubric, load_submission_contract
 from engine.secret_store import SecretStore
 from engine.submission_bundle import SubmissionBundleError, parse_submission_bundle
 from tasks.task_spec import GreenConfig, load_task_spec
+from utils.mock_private_rubrics import hyy_l1_private_rubric
 
 
 TASK_DIR = Path(__file__).parent.parent / "tasks_public" / "t002_hyy_v5_l1"
@@ -71,10 +72,10 @@ def sample_submission_bundle() -> dict:
                     {"cut_id": "subleading_photon_tight_id", "applies_to": "subleading_photon", "variable": "photon_isTightID", "operator": "==", "value": True, "applied": True},
                     {"cut_id": "leading_photon_pt", "applies_to": "leading_photon", "variable": "photon_pt", "operator": ">", "value": 50.0, "applied": True},
                     {"cut_id": "subleading_photon_pt", "applies_to": "subleading_photon", "variable": "photon_pt", "operator": ">", "value": 30.0, "applied": True},
-                    {"cut_id": "leading_photon_isolation", "applies_to": "leading_photon", "variable": "photon_ptcone20", "operator": "<", "value": 0.055, "applied": True},
-                    {"cut_id": "subleading_photon_isolation", "applies_to": "subleading_photon", "variable": "photon_ptcone20", "operator": "<", "value": 0.055, "applied": True},
-                    {"cut_id": "leading_photon_eta_transition_veto", "applies_to": "leading_photon", "variable": "abs_photon_eta", "operator": "interval_veto", "value": [1.37, 1.52], "applied": True},
-                    {"cut_id": "subleading_photon_eta_transition_veto", "applies_to": "subleading_photon", "variable": "abs_photon_eta", "operator": "interval_veto", "value": [1.37, 1.52], "applied": True},
+                    {"cut_id": "leading_photon_isolation", "applies_to": "leading_photon", "variable": "photon_ptcone20", "operator": "<", "value": 0.055, "depends_on": ["photon_ptcone20", "photon_pt"], "applied": True},
+                    {"cut_id": "subleading_photon_isolation", "applies_to": "subleading_photon", "variable": "photon_ptcone20", "operator": "<", "value": 0.055, "depends_on": ["photon_ptcone20", "photon_pt"], "applied": True},
+                    {"cut_id": "leading_photon_eta_transition_veto", "applies_to": "leading_photon", "variable": "abs_photon_eta", "operator": "interval_veto", "value": [1.37, 1.52], "interval": [1.37, 1.52], "applied": True},
+                    {"cut_id": "subleading_photon_eta_transition_veto", "applies_to": "subleading_photon", "variable": "abs_photon_eta", "operator": "interval_veto", "value": [1.37, 1.52], "interval": [1.37, 1.52], "applied": True},
                     {"cut_id": "diphoton_mass_nonzero", "applies_to": "diphoton_pair", "variable": "m_yy", "operator": "!=", "value": 0.0, "applied": True},
                     {"cut_id": "leading_photon_pt_over_m_yy", "applies_to": "leading_photon", "variable": "photon_pt_over_m_yy", "operator": ">", "value": 0.35, "applied": True},
                     {"cut_id": "subleading_photon_pt_over_m_yy", "applies_to": "subleading_photon", "variable": "photon_pt_over_m_yy", "operator": ">", "value": 0.35, "applied": True},
@@ -123,64 +124,23 @@ def sample_submission_bundle() -> dict:
 
 
 def sample_private_rubric() -> dict:
-    return {
-        "version": 1,
-        "weights": {
-            "execution": 0.4,
-            "pipeline": 0.3,
-            "analysis": 0.3,
-            "validation": 0.0,
-        },
-        "checks": {
-            "execution": [
-                {
-                    "id": "required_outputs_present",
-                    "type": "deterministic",
-                    "condition": {
-                        "required_outputs": [
-                            {"canonical_filename": "diphoton_mass_spectrum.json"},
-                            {"canonical_filename": "diphoton_fit_summary.json"},
-                            {"canonical_filename": "data_minus_background.json"},
-                            {"canonical_filename": "interpretation.md"},
-                            {"canonical_filename": "submission_trace.json"},
-                        ],
-                    },
-                    "score": 1.0,
-                }
-            ],
-            "pipeline": [
-                {
-                    "id": "required_stages_present",
-                    "type": "structural",
-                    "condition": {
-                        "required_stages": [
-                            "data_loading",
-                            "event_selection",
-                            "diphoton_mass_construction",
-                            "spectrum_histogramming",
-                            "uncertainty_assignment",
-                            "spectrum_fitting",
-                            "signal_interpretation",
-                        ]
-                    },
-                    "score": 1.0,
-                }
-            ],
-            "analysis": [
-                {
-                    "id": "peak_range",
-                    "type": "deterministic",
-                    "condition": {
-                        "artifact_id": "diphoton_fit_summary",
-                        "field": "signal_peak_position",
-                        "expected_range": [123.0, 127.0],
-                    },
-                    "score": 1.0,
-                }
-            ],
-            "validation": [],
-        },
+    return hyy_l1_private_rubric()
+
+
+def canonical_hyy_task(**updates):
+    task = load_task_spec(TASK_DIR)
+    canonical = {
+        "mode": "call_white",
+        "needs_data": True,
+        "requires_large_input_data": True,
+        "supports_scenario_shared_input": True,
+        "supports_local_shared_input": True,
+        "input_strategy": "shared_manifest",
+        "solver_response_mode": "submission_bundle_v1",
+        "evaluation_mode": "directory_contract_and_private_l1",
     }
+    canonical.update(updates)
+    return task.model_copy(update=canonical)
 
 
 def test_task_spec_capability_defaults_for_legacy_task():
@@ -191,7 +151,7 @@ def test_task_spec_capability_defaults_for_legacy_task():
 
 
 def test_task_spec_capability_overrides_for_hyy_task():
-    task = load_task_spec(TASK_DIR)
+    task = canonical_hyy_task()
     assert task.input_strategy == "shared_manifest"
     assert task.solver_response_mode == "submission_bundle_v1"
     assert task.evaluation_mode == "directory_contract_and_private_l1"
@@ -235,15 +195,31 @@ def make_secret_store_payload(task_spec) -> str:
     )
 
 
+def make_secret_store_payload_with_wrong_hash(task_spec) -> str:
+    rubric_b64 = base64.b64encode(yaml.safe_dump(sample_private_rubric(), sort_keys=False).encode("utf-8")).decode("utf-8")
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "tasks": {
+                task_spec.id: {
+                    "public_contract_sha256": "deadbeef",
+                    "private_rubric_yaml_b64": rubric_b64,
+                }
+            },
+            "judge_env": {},
+        }
+    )
+
+
 def test_resolve_input_access_requires_static_mount(tmp_path):
-    task = load_task_spec(TASK_DIR)
+    task = canonical_hyy_task()
     cfg = GreenConfig(task_dirs=[str(TASK_DIR)])
     with pytest.raises(InputAccessError):
         resolve_input_access(task, cfg)
 
 
 def test_validate_task_capabilities_rejects_missing_contract_for_bundle_mode(tmp_path):
-    task = load_task_spec(TASK_DIR).model_copy(update={"submission_contract_path": None})
+    task = canonical_hyy_task(submission_contract_path=None)
     cfg = GreenConfig(
         task_dirs=[str(TASK_DIR)],
         input_access_mode="local_shared_mount",
@@ -256,8 +232,38 @@ def test_validate_task_capabilities_rejects_missing_contract_for_bundle_mode(tmp
         agent._validate_task_capabilities(task, cfg)
 
 
+def test_apply_task_runtime_override_updates_allowed_fields():
+    task = canonical_hyy_task()
+    cfg = GreenConfig(
+        task_dirs=[str(TASK_DIR)],
+        task_overrides={
+            task.id: {
+                "mode": "mock",
+                "input_strategy": "download",
+                "max_files": 1,
+                "release": "2026-test-release",
+            }
+        },
+    )
+
+    agent = Agent()
+    effective, applied = agent._apply_task_runtime_override(task, cfg)
+
+    assert effective is not None
+    assert effective.mode == "mock"
+    assert effective.input_strategy == "download"
+    assert effective.max_files == 1
+    assert effective.release == "2026-test-release"
+    assert applied == {
+        "mode": "mock",
+        "input_strategy": "download",
+        "max_files": 1,
+        "release": "2026-test-release",
+    }
+
+
 def test_parse_submission_bundle_rejects_large_payload():
-    contract = load_submission_contract(load_task_spec(TASK_DIR))
+    contract = load_submission_contract(canonical_hyy_task())
     bundle = sample_submission_bundle()
     bundle["artifacts"]["interpretation.md"] = "x" * (600 * 1024)
     with pytest.raises(SubmissionBundleError):
@@ -265,7 +271,7 @@ def test_parse_submission_bundle_rejects_large_payload():
 
 
 def test_validate_submission_dir_hyy_v5_l1(tmp_path):
-    task = load_task_spec(TASK_DIR)
+    task = canonical_hyy_task()
     bundle = sample_submission_bundle()
     for filename, payload in bundle["artifacts"].items():
         path = tmp_path / filename
@@ -279,13 +285,37 @@ def test_validate_submission_dir_hyy_v5_l1(tmp_path):
     assert report["missing_files"] == []
 
 
+def test_private_rubric_loads_with_matching_contract_hash():
+    task = canonical_hyy_task()
+    secret_store = SecretStore(make_secret_store_payload(task))
+    rubric = load_private_l1_rubric(task, secret_store)
+
+    assert rubric["weights"]["execution"] == 0.35
+    assert sorted(rubric["checks"].keys()) == [
+        "analysis",
+        "execution",
+        "implementation",
+        "pipeline",
+        "reasoning",
+        "validation",
+    ]
+
+
+def test_private_rubric_missing_on_contract_hash_mismatch():
+    task = canonical_hyy_task()
+    secret_store = SecretStore(make_secret_store_payload_with_wrong_hash(task))
+
+    rubric = load_private_l1_rubric(task, secret_store)
+    assert rubric == {}
+
+
 @pytest.mark.asyncio
 async def test_agent_hyy_v5_l1_submission_bundle_flow(monkeypatch, tmp_path):
     shared_input = tmp_path / "shared_input"
     shared_input.mkdir()
     (shared_input / "events.root").write_text("placeholder", encoding="utf-8")
 
-    task = load_task_spec(TASK_DIR)
+    task = canonical_hyy_task()
     captured = {}
 
     async def fake_talk_to_agent(self, message, url, new_conversation=True, timeout=300):
@@ -293,6 +323,7 @@ async def test_agent_hyy_v5_l1_submission_bundle_flow(monkeypatch, tmp_path):
         return json.dumps(sample_submission_bundle())
 
     monkeypatch.setattr("messenger.Messenger.talk_to_agent", fake_talk_to_agent)
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
     monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
 
     req = {
@@ -315,9 +346,11 @@ async def test_agent_hyy_v5_l1_submission_bundle_flow(monkeypatch, tmp_path):
     assert updater.rejected is None
     payload = captured["message"]
     assert "task_spec" not in payload
+    assert payload["mode"] == task.mode
     assert payload["submission_contract"]["required_outputs"][0]["canonical_filename"] == "diphoton_mass_spectrum.json"
     assert payload["data"]["shared_input_dir"] == str(shared_input)
     assert payload["data"]["read_only_for_solver"] is True
+    assert payload["data"]["max_files"] == task.max_files
 
     runs_root = Path(req["config"]["data_dir"]) / "runs"
     run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
@@ -332,6 +365,280 @@ async def test_agent_hyy_v5_l1_submission_bundle_flow(monkeypatch, tmp_path):
     assert report["status"] == "ok"
     assert report["hard_checks_passed"] is True
     assert report["final"]["total_score"] > 0.0
+    assert sorted(report["dimension_scores"].keys()) == [
+        "analysis",
+        "execution",
+        "implementation",
+        "pipeline",
+        "reasoning",
+        "validation",
+    ]
+    assert report["final"]["normalized_score"] is not None
+
+
+@pytest.mark.asyncio
+async def test_agent_download_strategy_delegates_download_to_solver(monkeypatch, tmp_path):
+    task = canonical_hyy_task(input_strategy="download", mode="call_white")
+    captured = {}
+
+    async def fake_talk_to_agent(self, message, url, new_conversation=True, timeout=300):
+        captured["message"] = json.loads(message)
+        return json.dumps(sample_submission_bundle())
+
+    def fail_if_green_downloads(**kwargs):
+        raise AssertionError("green should not download when input_strategy=download")
+
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+    monkeypatch.setattr("messenger.Messenger.talk_to_agent", fake_talk_to_agent)
+    monkeypatch.setattr("agent.ensure_atlas_open_data_downloaded", fail_if_green_downloads)
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
+
+    req = {
+        "participants": {"purple_agent": "http://example.com"},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    monkeypatch.setattr(agent, "_build_secret_backed_judge", lambda secret_store: None)
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    assert updater.rejected is None
+    payload = captured["message"]
+    assert payload["data"]["release"] == task.release
+    assert payload["data"]["dataset"] == task.dataset
+    assert payload["data"]["skim"] == task.skim
+    assert payload["data"]["max_files"] == task.max_files
+    assert payload["data"]["input_strategy"] == "download"
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    task_dir = run_dirs[0] / task.id
+    data_info = json.loads((task_dir / "data_info.json").read_text(encoding="utf-8"))
+    assert data_info["download_managed_by"] == "solver"
+
+
+@pytest.mark.asyncio
+async def test_agent_hyy_v5_l1_mock_mode_scores_from_private_rubric(monkeypatch, tmp_path):
+    shared_input = tmp_path / "shared_input"
+    shared_input.mkdir()
+    (shared_input / "events.root").write_text("placeholder", encoding="utf-8")
+
+    task = canonical_hyy_task(mode="mock")
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
+
+    req = {
+        "participants": {"purple_agent": "http://unused.example.com"},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+            "input_access_mode": "local_shared_mount",
+            "shared_input_dir": str(shared_input),
+            "input_manifest_path": str(shared_input / "input_manifest.json"),
+            "allow_green_download": False,
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    monkeypatch.setattr(agent, "_build_secret_backed_judge", lambda secret_store: None)
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    assert updater.rejected is None
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    task_dir = run_dirs[0] / task.id
+
+    report = json.loads((task_dir / "judge_output.json").read_text(encoding="utf-8"))
+    assert report["status"] == "ok"
+    assert report["hard_checks_passed"] is True
+    assert report["dimension_scores"] == {
+        "execution": 1.0,
+        "pipeline": 1.0,
+        "implementation": 1.0,
+        "reasoning": 0.0,
+        "analysis": 1.0,
+        "validation": 0.0,
+    }
+    assert report["check_results"]
+    assert report["final"]["total_score"] == pytest.approx(0.9)
+
+
+@pytest.mark.asyncio
+async def test_agent_hyy_v5_l1_mock_mode_can_run_without_shared_mount(monkeypatch, tmp_path):
+    task = canonical_hyy_task(mode="mock")
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
+
+    req = {
+        "participants": {"purple_agent": "http://unused.example.com"},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    monkeypatch.setattr(agent, "_build_secret_backed_judge", lambda secret_store: None)
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    assert updater.rejected is None
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    task_dir = run_dirs[0] / task.id
+
+    report = json.loads((task_dir / "judge_output.json").read_text(encoding="utf-8"))
+    data_info = json.loads((task_dir / "data_info.json").read_text(encoding="utf-8"))
+    manifest = json.loads((task_dir / "mock_shared_input" / "input_manifest.json").read_text(encoding="utf-8"))
+
+    assert report["status"] == "ok"
+    assert report["final"]["normalized_score"] == pytest.approx(0.9)
+    assert data_info["n_files"] == 1
+    assert manifest["synthetic_for_mock_mode"] is True
+    assert manifest["files"][0]["logical_name"] == "events.root"
+
+
+@pytest.mark.asyncio
+async def test_agent_skips_task_when_override_disables_it(monkeypatch, tmp_path):
+    task = canonical_hyy_task()
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+
+    req = {
+        "participants": {},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+            "task_overrides": {
+                task.id: {
+                    "enabled": False,
+                    "mode": "mock",
+                }
+            },
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    assert not (run_dirs[0] / task.id).exists()
+
+    summary_artifacts = [artifact for artifact in updater.artifacts if artifact[0] == "Summary"]
+    assert len(summary_artifacts) == 1
+    summary_payload = summary_artifacts[0][1][1].root.data
+    assert summary_payload["tasks"] == []
+    assert summary_payload["score_total"] == 0.0
+    assert summary_payload["score_max"] == 0.0
+
+
+@pytest.mark.asyncio
+async def test_agent_hyy_v5_l1_reports_rubric_unavailable(monkeypatch, tmp_path):
+    shared_input = tmp_path / "shared_input"
+    shared_input.mkdir()
+    (shared_input / "events.root").write_text("placeholder", encoding="utf-8")
+
+    task = canonical_hyy_task()
+
+    async def fake_talk_to_agent(self, message, url, new_conversation=True, timeout=300):
+        return json.dumps(sample_submission_bundle())
+
+    monkeypatch.setattr("messenger.Messenger.talk_to_agent", fake_talk_to_agent)
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload_with_wrong_hash(task))
+
+    req = {
+        "participants": {"white_agent": "http://example.com"},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+            "input_access_mode": "local_shared_mount",
+            "shared_input_dir": str(shared_input),
+            "input_manifest_path": str(shared_input / "input_manifest.json"),
+            "allow_green_download": False,
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    task_dir = run_dirs[0] / task.id
+
+    report = json.loads((task_dir / "judge_output.json").read_text(encoding="utf-8"))
+    assert report["status"] == "rubric_unavailable"
+    assert report["hard_checks_passed"] is True
+    assert report["dimension_scores"] == {
+        "execution": 0.0,
+        "pipeline": 0.0,
+        "implementation": 0.0,
+        "reasoning": 0.0,
+        "analysis": 0.0,
+        "validation": 0.0,
+    }
+    assert any(issue["code"] == "PRIVATE_RUBRIC_UNAVAILABLE" for issue in report["issues"])
+
+
+@pytest.mark.asyncio
+async def test_hyy_v5_l1_green_report_is_leaderboard_ready(monkeypatch, tmp_path):
+    shared_input = tmp_path / "shared_input"
+    shared_input.mkdir()
+    (shared_input / "events.root").write_text("placeholder", encoding="utf-8")
+
+    task = canonical_hyy_task(mode="mock")
+    monkeypatch.setattr("agent.load_task_spec", lambda _: task)
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
+
+    req = {
+        "participants": {"purple_agent": "http://unused.example.com"},
+        "config": {
+            "task_dirs": [str(TASK_DIR)],
+            "data_dir": str(tmp_path / "runs"),
+            "input_access_mode": "local_shared_mount",
+            "shared_input_dir": str(shared_input),
+            "input_manifest_path": str(shared_input / "input_manifest.json"),
+            "allow_green_download": False,
+        },
+    }
+
+    updater = DummyUpdater()
+    agent = Agent()
+    monkeypatch.setattr(agent, "_build_secret_backed_judge", lambda secret_store: None)
+    await agent.run(new_agent_text_message(json.dumps(req)), updater)
+
+    runs_root = Path(req["config"]["data_dir"]) / "runs"
+    run_dirs = [path for path in runs_root.iterdir() if path.is_dir()]
+    assert len(run_dirs) == 1
+    task_dir = run_dirs[0] / task.id
+    report = json.loads((task_dir / "judge_output.json").read_text(encoding="utf-8"))
+
+    for key in ["task_id", "type", "status", "hard_checks_passed", "dimension_scores", "check_results", "final"]:
+        assert key in report
+    for key in ["total_score", "max_score", "normalized_score"]:
+        assert key in report["final"]
+    assert sorted(report["dimension_scores"].keys()) == [
+        "analysis",
+        "execution",
+        "implementation",
+        "pipeline",
+        "reasoning",
+        "validation",
+    ]
 
 
 @pytest.mark.asyncio
@@ -340,7 +647,7 @@ async def test_agent_routes_by_capability_not_task_id(monkeypatch, tmp_path):
     shared_input.mkdir()
     (shared_input / "events.root").write_text("placeholder", encoding="utf-8")
 
-    task = load_task_spec(TASK_DIR).model_copy(update={"id": "t999_custom_l1"})
+    task = canonical_hyy_task(id="t999_custom_l1")
     captured = {"prepare": 0, "trace": 0, "bundle": 0, "eval": 0}
 
     monkeypatch.setattr("agent.load_task_spec", lambda _: task)
@@ -360,7 +667,7 @@ async def test_agent_routes_by_capability_not_task_id(monkeypatch, tmp_path):
             },
         )
 
-    async def fake_bundle(self, task, request, task_eval_dir, data_info, input_manifest):
+    async def fake_bundle(self, task, request, task_eval_dir, data_info, input_manifest, persist_payloads):
         captured["bundle"] += 1
         submission_trace = sample_submission_bundle()["artifacts"]["submission_trace.json"]
         (task_eval_dir / "submission_trace.json").write_text(json.dumps(submission_trace), encoding="utf-8")
