@@ -43,7 +43,6 @@ services:
       - OLLAMA_HOST={ollama_host}
     volumes:
       - ./output:/home/agent/output
-      - ./shared_input:/shared/hepex/input
     env_file:
       - .env
     depends_on:
@@ -60,7 +59,6 @@ services:
       - OLLAMA_API_BASE={ollama_host}
     volumes:
       - ./output:/home/agent/output
-      - ./shared_input:/shared/hepex/input:ro
     ports:
       - "9009:9009"
     env_file:
@@ -251,8 +249,8 @@ def main():
     purple_img = args.purple_image
 
     if args.local:
-        green_img = "hepex-green-agent:local"
-        purple_img = "hepex-purple-agent:local"
+        green_img = "hepex-green-agent-local:v1.1"
+        purple_img = "hepex-purple-agent-local:v1.1"
 
     if args.llm_provider == "openai":
         judge_provider = "openai"
