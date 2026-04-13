@@ -43,6 +43,26 @@ def merge_parts(parts: list[Part]) -> str:
     return "\n".join(chunks)
 
 
+def _extract_task_payload_text(task, update) -> str:
+    artifact = getattr(update, "artifact", None)
+    if artifact and getattr(artifact, "parts", None):
+        return merge_parts(artifact.parts)
+
+    artifacts = getattr(task, "artifacts", None) or []
+    if artifacts:
+        return "".join(
+            merge_parts(artifact.parts)
+            for artifact in artifacts
+            if getattr(artifact, "parts", None)
+        )
+
+    msg = getattr(getattr(task, "status", None), "message", None)
+    if msg and getattr(msg, "parts", None):
+        return merge_parts(msg.parts)
+
+    return ""
+
+
 async def send_message(
     message: str,
     base_url: str,
@@ -92,12 +112,7 @@ async def send_message(
             case (task, update):
                 outputs["context_id"] = task.context_id
                 outputs["status"] = task.status.state.value
-                msg = task.status.message
-                if msg:
-                    outputs["response"] += merge_parts(msg.parts)
-                if task.artifacts:
-                    for artifact in task.artifacts:
-                        outputs["response"] += merge_parts(artifact.parts)
+                outputs["response"] += _extract_task_payload_text(task, update)
 
             case _:
                 pass

@@ -262,6 +262,33 @@ def test_apply_task_runtime_override_updates_allowed_fields():
     }
 
 
+def test_secret_backed_judge_falls_back_to_process_judge_when_secret_env_missing(monkeypatch):
+    agent = Agent()
+    fallback_judge = object()
+    agent.llm_judge = fallback_judge
+
+    task = canonical_hyy_task()
+    monkeypatch.setenv("GREEN_SECRETS_JSON", make_secret_store_payload(task))
+    secret_store = SecretStore()
+
+    assert agent._build_secret_backed_judge(secret_store) is fallback_judge
+
+
+def test_secret_backed_judge_falls_back_to_process_judge_when_secret_env_invalid(monkeypatch):
+    agent = Agent()
+    fallback_judge = object()
+    agent.llm_judge = fallback_judge
+
+    task = canonical_hyy_task()
+    payload = json.loads(make_secret_store_payload(task))
+    payload["judge_env"] = {"HEPEX_JUDGE_PROVIDER": "openai"}
+    secret_store = SecretStore(json.dumps(payload))
+
+    monkeypatch.setattr("agent.get_judge", lambda: (_ for _ in ()).throw(RuntimeError("missing secret-backed key")))
+
+    assert agent._build_secret_backed_judge(secret_store) is fallback_judge
+
+
 def test_parse_submission_bundle_rejects_large_payload():
     contract = load_submission_contract(canonical_hyy_task())
     bundle = sample_submission_bundle()

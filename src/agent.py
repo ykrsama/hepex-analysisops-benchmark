@@ -161,9 +161,30 @@ class Agent:
         code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
         if code_block_match:
             return code_block_match.group(1).strip()
-        json_match = re.search(r'(\{[\s\S]*\})', text)
-        if json_match:
-            return json_match.group(1)
+
+        start = text.find("{")
+        if start >= 0:
+            depth = 0
+            in_string = False
+            escape = False
+            for idx, ch in enumerate(text[start:], start):
+                if escape:
+                    escape = False
+                    continue
+                if ch == "\\":
+                    escape = True
+                    continue
+                if ch == '"':
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        return text[start : idx + 1]
         return text
 
     def _public_task_view(self, task: TaskSpec) -> dict[str, Any]:
@@ -202,12 +223,12 @@ class Agent:
     def _build_secret_backed_judge(self, secret_store: SecretStore):
         judge_env = secret_store.get_judge_env()
         if not judge_env:
-            return None
+            return self.llm_judge
         with patched_env(judge_env):
             try:
                 return get_judge()
             except RuntimeError:
-                return None
+                return self.llm_judge
 
     def _validate_task_capabilities(self, task: TaskSpec, cfg: GreenConfig) -> None:
         if task.input_strategy == "shared_manifest":
