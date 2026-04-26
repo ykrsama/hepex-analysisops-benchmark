@@ -54,7 +54,7 @@ Apply ALL cuts exactly (cut_id and criteria):
 - `subleading_photon_eta_transition_veto`: abs(subleading photon eta) not in [1.37, 1.52]
 - `diphoton_mass_nonzero`: m_yy != 0
 - `leading_photon_pt_over_m_yy`: pt / m_yy > 0.35
-- `subleading_photon_pt_over_m_yy`: pt / m_yy > 0.25
+- `subleading_photon_pt_over_m_yy`: pt / m_yy > 0.35
 
 Do NOT modify cut_id, thresholds or logic.
 
