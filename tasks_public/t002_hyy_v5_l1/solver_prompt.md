@@ -4,35 +4,7 @@ Rediscover the Higgs boson in the diphoton channel by reconstructing the diphoto
 
 ---
 
-# 2. Dataset
-
-Use ATLAS Open Data:
-
-- Release: 2025e-13tev-beta
-- Sample: GamGam
-- Mode: diphoton_skim
-
-Combine all specified 2015–2016 periods into a single spectrum.
-
----
-
-# 3. Submission Contract Requirement
-
-Before producing any outputs, you MUST read the submission contract carefully.
-
-The submission contract is the authoritative specification for:
-- required filenames
-- required fields
-- field naming
-- output completeness
-
-Do NOT invent alternative output formats.
-
-This prompt defines scientific behavior only.
-
----
-
-# 4. Required Workflow (Strict L1 Execution)
+# 2. Top-level Workflow (Strict Execution)
 
 Reproduce the baseline workflow exactly in this order:
 
@@ -44,11 +16,23 @@ Reproduce the baseline workflow exactly in this order:
 6. spectrum_fitting  
 7. signal_interpretation  
 
-Do NOT reorder, skip, or redesign stages.
+This is a test about if you can strictly and faithfully follow user's instruction, so Do NOT reorder, skip, or redesign stages.
 
 ---
 
-# 5. Event/Object Selection (Exact Baseline)
+# 3. Dataset
+
+Use ATLAS Open Data:
+
+- Release: 2025e-13tev-beta
+- Sample: GamGam
+- Mode: diphoton_skim
+
+Combine all specified 2015–2016 periods into a single spectrum.
+
+---
+
+# 4. Event/Object Selection (Exact Baseline)
 
 Use the leading and subleading photons.
 
@@ -73,7 +57,7 @@ Do NOT modify thresholds or logic.
 
 ---
 
-# 6. Observable and Histogram
+# 5. Observable and Histogram
 
 Primary observable: m_yy
 
@@ -83,7 +67,7 @@ Primary observable: m_yy
 
 ---
 
-# 7. Inference (Strict Baseline)
+# 6. Inference (Strict Baseline)
 
 Perform a fit with:
 
@@ -96,36 +80,95 @@ Do NOT change model family or configuration.
 
 ---
 
-# 8. Required Outputs
+# 7. Required Outputs
 
-- diphoton_mass_spectrum.json
-- diphoton_fit_summary.json
-- data_minus_background.json
-- interpretation.md
-- submission_trace.json
+Your final output will be reveiwed by the benchmark agent program, thus any wrong output format will cause parseing error.
+Do NOT skip any fields.
+Your final output shold be in JSON format.
+
+Exaxmple template:
+{
+  "status": "ok",
+  "artifacts": {
+    "diphoton_mass_spectrum.json": {
+      "bin_edges": [...],
+      "bin_counts": [...],
+      "bin_uncertainties": [...],
+    },
+    "diphoton_fit_summary.json": {
+      "signal_model_family": "...",
+      "background_model_family": "...",
+      "fit_range": [...],
+      "signal_peak_position": ...,
+    },
+    "data_minus_background.json": {
+      "bin_centers": [...],
+      "residual_counts": [...],
+      "residual_uncertainties": [...],
+    },
+    "interpretation.md": "...",
+    "submission_trace.json": {
+      "task_id": task_id,
+      "workflow_stages": [
+        {"stage_id": "data_loading", "order_index": 1, "status": "ok", "depends_on": []},
+        ...
+      ],
+      "baseline_assumptions_used": [
+        "...",
+      ],
+      "object_definition": {
+        "type": "...",
+        "multiplicity": 2,
+        "ordering_principle": "...",
+        "baseline_assumption": {
+            "leading_photon_index": ...,
+            "subleading_photon_index": ...,
+        },
+      },
+      "cuts_applied": [
+        {"cut_id": "...", "applies_to": "...", "variable": "...", "operator": "...", "value": ..., "applied": True},
+        ...
+      ],
+      "derived_observables": [
+        {"name": "...", "depends_on": ["..."]},
+        ...
+      ],
+      "observable_constructed": {
+        "name": "...",
+        "inputs": ["..."],
+        "formula_summary": "...",
+      },
+      "primary_observable": {
+        "name": "...",
+        "inputs": ["..."],
+        "construction": "...",
+      },
+      "histogram_definition": {
+        "observable": "...",
+        "range": [...],
+        "bin_width": ...,
+        "uncertainty_model": "...",
+      },
+      "fit_model_family_used": {
+        "signal": "...",
+        "background": "...",
+        "background_order": ...,
+        "fit_range_GeV": [...],
+        "weighting_scheme": "...",
+      },
+      "output_files_generated": [
+        "...",
+      ],
+      "reported_result": {
+        "signal_peak_position": 125.1,
+      }
+    }
+  }
+}
 
 ---
 
-# 9. Execution Trace Requirement (CRITICAL)
-
-submission_trace.json is REQUIRED.
-
-It must be STRUCTURED (not narrative).
-
-It must include:
-
-- workflow_stages (ordered execution)
-- cuts_applied (with explicit values)
-- observable_constructed
-- fit_model_family_used
-- output_files_generated
-- reported_result (including signal_peak_position)
-
-Do NOT use free-form text as the main structure.
-
----
-
-# 10. Anti-Cheating Requirement
+# 8. Anti-Cheating Requirement
 
 All outputs MUST be derived from actual computation.
 
@@ -133,7 +176,7 @@ Do NOT fabricate results or skip required steps.
 
 ---
 
-# 11. Interpretation Requirement
+# 9. Interpretation Requirement
 
 Write a short conclusion:
 
@@ -144,8 +187,9 @@ The conclusion must be consistent with the fit and residual results.
 
 ---
 
-# 12. Runtime Input Rules
+# 10. Runtime Input Rules
 
 If `shared_input_dir` is provided, treat it as read-only input.
 Do not modify dataset files in place.
 Return outputs through `submission_bundle_v1` as small structured artifacts only.
+
