@@ -41,19 +41,17 @@ Baseline assumption:
 
 Do NOT search for alternative pairings.
 
-Apply ALL cuts exactly:
+Apply ALL cuts exactly (cut_id and criteria):
 
-- photon_count >= 2
-- leading photon tight ID == true
-- subleading photon tight ID == true
-- leading photon pt > 50 GeV
-- subleading photon pt > 30 GeV
-- isolation ratio < 0.055
-- eta transition veto [1.37, 1.52]
-- m_yy != 0
-- pt / m_yy > 0.35 (both photons)
+- `at_least_two_photons`: photon_count >= 2
+- `leading/subleading_photon_tight_id`: (leading photon tight ID == true) and (subleading photon tight ID == true)
+- `leading/subleading_photon_pt`: (leading photon pt > 50 GeV) and (subleading photon pt > 30 GeV)
+- `leading/subleading_photon_isolation`: isolation ratio < 0.055
+- `leading/subleading_photon_eta_transition_veto`: eta transition veto [1.37, 1.52]
+- `diphoton_mass_nonzero`: m_yy != 0
+- `leading/subleading_photon_pt_over_m_yy`: pt / m_yy > 0.35 (both photons)
 
-Do NOT modify thresholds or logic.
+Do NOT modify cut_id, thresholds or logic.
 
 ---
 
