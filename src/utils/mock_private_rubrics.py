@@ -185,98 +185,88 @@ def _embedded_hyy_l1_private_rubric() -> dict[str, Any]:
                 },
                 {
                     "id": "baseline_selection_cuts_correct",
-                    "type": "deterministic",
+                    "type": "llm_judge",
                     "description": "all baseline selection cuts and thresholds match task specification",
                     "condition": {
-                        "selection_cuts": [
-                            {
-                                "cut_id": "at_least_two_photons",
-                                "applies_to": "event",
-                                "variable": "photon_count",
-                                "operator": ">=",
-                                "value": 2,
-                            },
-                            {
-                                "cut_id": "leading_photon_tight_id",
-                                "applies_to": "leading_photon",
-                                "variable": "photon_isTightID",
-                                "operator": "==",
-                                "value": True,
-                            },
-                            {
-                                "cut_id": "subleading_photon_tight_id",
-                                "applies_to": "subleading_photon",
-                                "variable": "photon_isTightID",
-                                "operator": "==",
-                                "value": True,
-                            },
-                            {
-                                "cut_id": "leading_photon_pt",
-                                "applies_to": "leading_photon",
-                                "variable": "photon_pt",
-                                "operator": ">",
-                                "value": 50.0,
-                            },
-                            {
-                                "cut_id": "subleading_photon_pt",
-                                "applies_to": "subleading_photon",
-                                "variable": "photon_pt",
-                                "operator": ">",
-                                "value": 30.0,
-                            },
-                            {
-                                "cut_id": "leading_photon_isolation",
-                                "applies_to": "leading_photon",
-                                "variable": "photon_ptcone20",
-                                "operator": "<",
-                                "value": 0.055,
-                                "depends_on": ["photon_ptcone20", "photon_pt"],
-                            },
-                            {
-                                "cut_id": "subleading_photon_isolation",
-                                "applies_to": "subleading_photon",
-                                "variable": "photon_ptcone20",
-                                "operator": "<",
-                                "value": 0.055,
-                                "depends_on": ["photon_ptcone20", "photon_pt"],
-                            },
-                            {
-                                "cut_id": "leading_photon_eta_transition_veto",
-                                "applies_to": "leading_photon",
-                                "variable": "abs_photon_eta",
-                                "operator": "interval_veto",
-                                "interval": [1.37, 1.52],
-                            },
-                            {
-                                "cut_id": "subleading_photon_eta_transition_veto",
-                                "applies_to": "subleading_photon",
-                                "variable": "abs_photon_eta",
-                                "operator": "interval_veto",
-                                "interval": [1.37, 1.52],
-                            },
-                            {
-                                "cut_id": "diphoton_mass_nonzero",
-                                "applies_to": "diphoton_pair",
-                                "variable": "m_yy",
-                                "operator": "!=",
-                                "value": 0.0,
-                            },
-                            {
-                                "cut_id": "leading_photon_pt_over_m_yy",
-                                "applies_to": "leading_photon",
-                                "variable": "photon_pt_over_m_yy",
-                                "operator": ">",
-                                "value": 0.35,
-                            },
-                            {
-                                "cut_id": "subleading_photon_pt_over_m_yy",
-                                "applies_to": "subleading_photon",
-                                "variable": "photon_pt_over_m_yy",
-                                "operator": ">",
-                                "value": 0.35,
-                            },
-                        ],
-                        "match": "exact",
+                        "evidence_inputs": [],
+                        "judge_rubric": {
+                            "task": (
+                                "Verify that submission_trace.cuts_applied implements the correct H→γγ "
+                                "baseline event selection. Accept semantically equivalent variable names "
+                                "and expressions (e.g. photon_isTightID[0] is acceptable for the leading "
+                                "photon tight-ID cut; photon_ptcone20[0]/photon_pt[0] is acceptable for "
+                                "the relative isolation cut). Numeric thresholds must match exactly."
+                            ),
+                            "expected_cuts": [
+                                {
+                                    "cut_id": "at_least_two_photons",
+                                    "physics": "select events with at least 2 photons",
+                                    "threshold": "photon_count >= 2",
+                                },
+                                {
+                                    "cut_id": "leading_photon_tight_id",
+                                    "physics": "leading photon (index 0) passes tight ID",
+                                    "threshold": "photon_isTightID[0] == True",
+                                },
+                                {
+                                    "cut_id": "subleading_photon_tight_id",
+                                    "physics": "subleading photon (index 1) passes tight ID",
+                                    "threshold": "photon_isTightID[1] == True",
+                                },
+                                {
+                                    "cut_id": "leading_photon_pt",
+                                    "physics": "leading photon transverse momentum",
+                                    "threshold": "photon_pt[0] > 50 GeV",
+                                },
+                                {
+                                    "cut_id": "subleading_photon_pt",
+                                    "physics": "subleading photon transverse momentum",
+                                    "threshold": "photon_pt[1] > 30 GeV",
+                                },
+                                {
+                                    "cut_id": "leading_photon_isolation",
+                                    "physics": "leading photon relative isolation (ptcone20/pt)",
+                                    "threshold": "photon_ptcone20[0] / photon_pt[0] < 0.055",
+                                },
+                                {
+                                    "cut_id": "subleading_photon_isolation",
+                                    "physics": "subleading photon relative isolation (ptcone20/pt)",
+                                    "threshold": "photon_ptcone20[1] / photon_pt[1] < 0.055",
+                                },
+                                {
+                                    "cut_id": "leading_photon_eta_transition_veto",
+                                    "physics": "leading photon |eta| outside ECAL crack region",
+                                    "threshold": "|photon_eta[0]| not in [1.37, 1.52]",
+                                },
+                                {
+                                    "cut_id": "subleading_photon_eta_transition_veto",
+                                    "physics": "subleading photon |eta| outside ECAL crack region",
+                                    "threshold": "|photon_eta[1]| not in [1.37, 1.52]",
+                                },
+                                {
+                                    "cut_id": "diphoton_mass_nonzero",
+                                    "physics": "diphoton invariant mass must be non-zero",
+                                    "threshold": "m_yy != 0",
+                                },
+                                {
+                                    "cut_id": "leading_photon_pt_over_m_yy",
+                                    "physics": "leading photon pt scaled by diphoton mass",
+                                    "threshold": "photon_pt[0] / m_yy > 0.35",
+                                },
+                                {
+                                    "cut_id": "subleading_photon_pt_over_m_yy",
+                                    "physics": "subleading photon pt scaled by diphoton mass",
+                                    "threshold": "photon_pt[1] / m_yy > 0.35",
+                                },
+                            ],
+                            "instructions": (
+                                "Return pass=true if all 12 cuts are present in cuts_applied and implement "
+                                "the correct physics. Accept syntactic variants of variable names (indexed "
+                                "access, unit suffixes, computed ratio expressions) as long as the physics "
+                                "selection and numeric thresholds are correct."
+                            ),
+                        },
+                        "passing_mode": "binary",
                     },
                     "score": 0.55,
                 },
