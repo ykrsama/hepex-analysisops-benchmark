@@ -93,18 +93,18 @@ Exaxmple template:
     "diphoton_mass_spectrum.json": {
       "bin_edges": [...],
       "bin_counts": [...],
-      "bin_uncertainties": [...],
+      "bin_uncertainties": [...]
     },
     "diphoton_fit_summary.json": {
       "signal_model_family": "...",
       "background_model_family": "...",
       "fit_range": [...],
-      "signal_peak_position": ...,
+      "signal_peak_position": ...
     },
     "data_minus_background.json": {
       "bin_centers": [...],
       "residual_counts": [...],
-      "residual_uncertainties": [...],
+      "residual_uncertainties": [...]
     },
     "interpretation.md": "...",
     "submission_trace.json": {
@@ -122,8 +122,8 @@ Exaxmple template:
         "ordering_principle": "...",
         "baseline_assumption": {
             "leading_photon_index": ...,
-            "subleading_photon_index": ...,
-        },
+            "subleading_photon_index": ...
+        }
       },
       "cuts_applied": [
         {"cut_id": "...", "applies_to": "...", "variable": "...", "operator": "...", "value": ..., "applied": True},
@@ -136,31 +136,31 @@ Exaxmple template:
       "observable_constructed": {
         "name": "...",
         "inputs": ["..."],
-        "formula_summary": "...",
+        "formula_summary": "..."
       },
       "primary_observable": {
         "name": "...",
         "inputs": ["..."],
-        "construction": "...",
+        "construction": "..."
       },
       "histogram_definition": {
         "observable": "...",
         "range": [...],
         "bin_width": ...,
-        "uncertainty_model": "...",
+        "uncertainty_model": "..."
       },
       "fit_model_family_used": {
         "signal": "...",
         "background": "...",
         "background_order": ...,
         "fit_range_GeV": [...],
-        "weighting_scheme": "...",
+        "weighting_scheme": "..."
       },
       "output_files_generated": [
         "...",
       ],
       "reported_result": {
-        "signal_peak_position": 125.1,
+        "signal_peak_position": 125.1
       }
     }
   }

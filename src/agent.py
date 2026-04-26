@@ -35,6 +35,12 @@ from utils.mock_traces import get_mock_bundle, get_mock_trace
 from dotenv import load_dotenv, find_dotenv
 from pathlib import Path
 
+try:
+    from json_repair import repair_json as _json_repair
+    _JSON_REPAIR_AVAILABLE = True
+except ImportError:
+    _JSON_REPAIR_AVAILABLE = False
+
 
 logger = logging.getLogger(__name__)
 
@@ -154,38 +160,145 @@ class Agent:
         return manifest
 
     def _task_eval_dir(self, runs_root: Path, run_id: str, task_id: str) -> Path:
-        return runs_root / run_id / task_id
+        return runs_root / task_id
 
     @staticmethod
-    def _extract_json_from_response(text: str) -> str:
-        code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
-        if code_block_match:
-            return code_block_match.group(1).strip()
+    def _extract_json_candidates(text: str) -> list[str]:
+        """Return all top-level JSON object substrings found in text, in order.
 
-        start = text.find("{")
-        if start >= 0:
+        For each '{' that is at depth-0, attempt bracket-matching to a '}' and
+        collect the candidate.  The last complete candidate is tried first by
+        _parse_json_flexible because purple agents tend to emit a final
+        authoritative JSON block after any explanatory prose.
+        """
+        candidates: list[str] = []
+        i = 0
+        n = len(text)
+        while i < n:
+            if text[i] != "{":
+                i += 1
+                continue
+            start = i
             depth = 0
             in_string = False
             escape = False
-            for idx, ch in enumerate(text[start:], start):
+            j = start
+            while j < n:
+                ch = text[j]
                 if escape:
                     escape = False
+                    j += 1
                     continue
-                if ch == "\\":
+                if ch == "\\" and in_string:
                     escape = True
+                    j += 1
                     continue
                 if ch == '"':
                     in_string = not in_string
+                    j += 1
                     continue
                 if in_string:
+                    j += 1
                     continue
                 if ch == "{":
                     depth += 1
                 elif ch == "}":
                     depth -= 1
                     if depth == 0:
-                        return text[start : idx + 1]
-        return text
+                        candidates.append(text[start : j + 1])
+                        i = j + 1
+                        break
+                j += 1
+            else:
+                # Truncated at this start — keep the partial fragment and stop
+                candidates.append(text[start:])
+                break
+            if not candidates or candidates[-1] != text[start:]:
+                pass  # already advanced i
+        return candidates
+
+    @staticmethod
+    def _extract_json_from_response(text: str) -> str:
+        """Extract the best JSON object candidate from text.
+
+        Priority:
+        1. Markdown code block (```json ... ```)
+        2. Last complete top-level JSON object (handles prose-before-JSON and
+           prose-with-{}-before-JSON cases)
+        3. Partial fragment from the last '{' when response is truncated
+        """
+        code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+        if code_block_match:
+            return code_block_match.group(1).strip()
+
+        candidates = Agent._extract_json_candidates(text)
+        if not candidates:
+            return text
+
+        # Prefer the last candidate — purple agents typically emit the JSON last.
+        # Return it for _parse_json_flexible to attempt json.loads / json_repair.
+        return candidates[-1]
+
+    @staticmethod
+    def _parse_json_flexible(text: str) -> dict:
+        """Parse JSON from a purple-agent response with graceful fallback for
+        mixed-text, truncated, or mildly malformed payloads.
+
+        Strategy:
+        1. Find all top-level JSON object candidates in the text (handles prose
+           before/after/interspersed with JSON).
+        2. Try json.loads on each candidate, last-first (purple agents tend to
+           emit the final authoritative JSON at the end).
+        3. If all strict parses fail and json-repair is available, retry each
+           candidate through repair, still last-first.
+        4. Raise the original JSONDecodeError if everything fails.
+        """
+        # Code-block fast path
+        code_block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?```', text)
+        if code_block_match:
+            snippet = code_block_match.group(1).strip()
+            try:
+                return json.loads(snippet)
+            except json.JSONDecodeError:
+                if _JSON_REPAIR_AVAILABLE:
+                    try:
+                        repaired = _json_repair(snippet, return_objects=True)
+                        if isinstance(repaired, dict):
+                            logger.warning("Purple agent code-block JSON required repair.")
+                            return repaired
+                    except Exception:
+                        pass
+
+        candidates = Agent._extract_json_candidates(text)
+        if not candidates:
+            candidates = [text]
+
+        first_err: json.JSONDecodeError | None = None
+
+        # Pass 1: strict parse, last candidate first
+        for candidate in reversed(candidates):
+            try:
+                return json.loads(candidate)
+            except json.JSONDecodeError as e:
+                if first_err is None:
+                    first_err = e
+
+        # Pass 2: json_repair fallback, last candidate first
+        if _JSON_REPAIR_AVAILABLE:
+            for candidate in reversed(candidates):
+                try:
+                    repaired = _json_repair(candidate, return_objects=True)
+                    if isinstance(repaired, dict):
+                        logger.warning(
+                            "Purple agent response required JSON repair "
+                            "(response may have been truncated or mixed with text). "
+                            "Parsed data may be incomplete."
+                        )
+                        return repaired
+                except Exception:
+                    continue
+
+        raise first_err or json.JSONDecodeError("No JSON found", text, 0)
 
     def _public_task_view(self, task: TaskSpec) -> dict[str, Any]:
         hidden = {
@@ -497,10 +610,9 @@ class Agent:
         if task_eval_dir is not None:
             self._persist_text_if_enabled(task_eval_dir / "purple_response_raw.txt", response_str, persist_payloads)
 
-        # 4) parse response - handle markdown code blocks
+        # 4) parse response - handle markdown fences, truncated, and repaired JSON
         try:
-            json_text = self._extract_json_from_response(response_str)
-            submission_trace = json.loads(json_text)
+            submission_trace = self._parse_json_flexible(response_str)
         except json.JSONDecodeError as e:
             error_payload = {
                 "task_id": task.id,
@@ -573,7 +685,7 @@ class Agent:
         if task_eval_dir is not None:
             self._persist_text_if_enabled(task_eval_dir / "purple_response_raw.txt", response_str, persist_payloads)
         try:
-            return json.loads(self._extract_json_from_response(response_str))
+            return self._parse_json_flexible(response_str)
         except json.JSONDecodeError as e:
             error = SubmissionBundleError(f"Purple agent returned non-JSON response: {e}")
             error.raw_response = response_str
@@ -631,14 +743,14 @@ class Agent:
 
         overall: dict[str, Any] = {
             "run_id": run_id,                              
-            "run_dir": str((runs_root / run_id).resolve()),
+            "run_dir": str(runs_root.resolve()),
             "data_dir": os.path.abspath(base_data_dir),
             "tasks": [],
             "score_total": 0.0,                 # sum of normalized per task
             "score_max": float(len(task_runs)), # maximum normalized sum
         }
-        self._persist_json_if_enabled(runs_root / run_id / "eval_request.json", request.model_dump(mode="json"), cfg.persist_payloads)
-        self._persist_json_if_enabled(runs_root / run_id / "green_config.json", cfg.model_dump(mode="json"), cfg.persist_payloads)
+        self._persist_json_if_enabled(runs_root / "eval_request.json", request.model_dump(mode="json"), cfg.persist_payloads)
+        self._persist_json_if_enabled(runs_root / "green_config.json", cfg.model_dump(mode="json"), cfg.persist_payloads)
 
         # 3) Run tasks sequentially
         for idx, (task, applied_overrides) in enumerate(task_runs, start=1):

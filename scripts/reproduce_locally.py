@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import asyncio
+import datetime
 import json
 import os
 from pathlib import Path
@@ -8,6 +9,9 @@ import subprocess
 import sys
 import uuid
 import time
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+SRC_ROOT = REPO_ROOT / "src"
 
 try:
     from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
@@ -42,7 +46,7 @@ services:
       - HEPEX_OLLAMA_MODEL={judge_ollama_model}
       - OLLAMA_HOST={ollama_host}
 {proxy_env}    volumes:
-      - ./output:/home/agent/output
+      - {run_output_dir}:/home/agent/output
       - ./shared_input:/shared/hepex/input
     env_file:
       - .env
@@ -57,7 +61,7 @@ services:
       - HEPEX_DATA_DIR=/home/agent/output
       - HEPEX_AGENT_MODEL={agent_model}
 {proxy_env}    volumes:
-      - ./output:/home/agent/output
+      - {run_output_dir}:/home/agent/output
       - ./shared_input:/shared/hepex/input:ro
     ports:
       - "9009:9009"
@@ -101,6 +105,53 @@ def _load_task_metadata(task_dir: str) -> tuple[str, str, str]:
     return str(release), str(dataset), str(skim)
 
 
+def _generate_mock_secrets_json(task_dir: str) -> str:
+    """Generate a GREEN_SECRETS_JSON payload embedding the mock private rubric."""
+    import base64
+    try:
+        import yaml as _yaml
+    except ImportError as exc:
+        raise RuntimeError("PyYAML is required for --mock-rubric") from exc
+
+    if str(SRC_ROOT) not in sys.path:
+        sys.path.insert(0, str(SRC_ROOT))
+
+    from engine.package_loader import load_submission_contract
+    from engine.secret_store import SecretStore
+    from tasks.task_spec import load_task_spec
+    from utils.mock_private_rubrics import hyy_l1_private_rubric
+
+    task_path = (REPO_ROOT / task_dir).resolve()
+    task_spec = load_task_spec(task_path)
+    contract = load_submission_contract(task_spec)
+    contract_hash = SecretStore("").contract_hash(contract)
+    rubric_b64 = base64.b64encode(
+        _yaml.safe_dump(hyy_l1_private_rubric(), sort_keys=False).encode("utf-8")
+    ).decode("utf-8")
+    return json.dumps(
+        {
+            "schema_version": 1,
+            "tasks": {
+                task_spec.id: {
+                    "public_contract_sha256": contract_hash,
+                    "private_rubric_yaml_b64": rubric_b64,
+                }
+            },
+            "judge_env": {},
+        }
+    )
+
+
+def _inject_mock_secrets_into_env(secrets_json: str, env_file: str = ".env") -> None:
+    """Write GREEN_SECRETS_JSON into the .env file, replacing any existing value."""
+    env_path = Path(env_file)
+    lines = env_path.read_text(encoding="utf-8").splitlines(keepends=True)
+    lines = [l for l in lines if not l.startswith("GREEN_SECRETS_JSON=")]
+    lines.append(f"GREEN_SECRETS_JSON={secrets_json}\n")
+    env_path.write_text("".join(lines), encoding="utf-8")
+    print("Injected mock GREEN_SECRETS_JSON into .env")
+
+
 def generate_compose(
     green_image,
     purple_image,
@@ -109,6 +160,7 @@ def generate_compose(
     judge_ollama_model,
     agent_model,
     ollama_host,
+    run_output_dir,
     proxy=None,
     output_file="docker-compose.yml",
 ):
@@ -130,6 +182,7 @@ def generate_compose(
         judge_ollama_model=judge_ollama_model,
         agent_model=agent_model,
         ollama_host=ollama_host,
+        run_output_dir=run_output_dir,
         proxy_env=proxy_env,
     )
     with open(output_file, "w") as f:
@@ -243,7 +296,12 @@ def main():
         default=None,
         help="HTTP/HTTPS proxy URL to inject into containers (e.g. https://127.0.0.1:7890).",
     )
-    
+    parser.add_argument(
+        "--mock-rubric",
+        action="store_true",
+        help="Embed a mock private rubric into GREEN_SECRETS_JSON in .env so the green agent can score locally without a real secret store.",
+    )
+
     args = parser.parse_args()
     release, dataset, skim = _load_task_metadata(args.task_dir)
     shared_input_root = Path("shared_input")
@@ -260,6 +318,10 @@ def main():
         print("OPENAI_API_KEY=sk-...")
         print("# For Ollama mode, .env can be empty.")
         sys.exit(1)
+
+    if args.mock_rubric:
+        secrets_json = _generate_mock_secrets_json(args.task_dir)
+        _inject_mock_secrets_into_env(secrets_json)
 
     green_img = args.green_image
     purple_img = args.purple_image
@@ -279,8 +341,13 @@ def main():
         judge_ollama_model = _strip_provider_prefix(args.llm_model, "ollama")
         agent_model = _agent_model_string("ollama", args.llm_model)
 
-    # Create output directory
-    os.makedirs("output", exist_ok=True)
+    # Create per-run output directory to keep runs isolated
+    run_id = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
+    run_output_path = Path("output") / run_id
+    run_output_path.mkdir(parents=True, exist_ok=True)
+    run_output_dir = f"./output/{run_id}"
+    print(f"Run output directory: {run_output_dir}")
+
     os.makedirs(shared_input_root, exist_ok=True)
 
     # 1. Generate docker-compose
@@ -292,6 +359,7 @@ def main():
         judge_ollama_model=judge_ollama_model,
         agent_model=agent_model,
         ollama_host=args.ollama_host,
+        run_output_dir=run_output_dir,
         proxy=args.proxy,
     )
     print(

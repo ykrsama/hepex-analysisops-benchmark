@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "a2a-sdk[http-server]>=0.3.22",
+    "json-repair>=0.29.0",
     "atlasopenmagic>=1.8.0",
     "claude>=0.4.11",
     "dotenv>=0.9.9",
