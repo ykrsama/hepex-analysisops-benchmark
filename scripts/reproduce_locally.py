@@ -41,8 +41,9 @@ services:
       - HEPEX_OPENAI_MODEL={judge_openai_model}
       - HEPEX_OLLAMA_MODEL={judge_ollama_model}
       - OLLAMA_HOST={ollama_host}
-    volumes:
+{proxy_env}    volumes:
       - ./output:/home/agent/output
+      - ./shared_input:/shared/hepex/input
     env_file:
       - .env
     depends_on:
@@ -55,10 +56,9 @@ services:
     environment:
       - HEPEX_DATA_DIR=/home/agent/output
       - HEPEX_AGENT_MODEL={agent_model}
-      - OLLAMA_HOST={ollama_host}
-      - OLLAMA_API_BASE={ollama_host}
-    volumes:
+{proxy_env}    volumes:
       - ./output:/home/agent/output
+      - ./shared_input:/shared/hepex/input:ro
     ports:
       - "9009:9009"
     env_file:
@@ -109,17 +109,28 @@ def generate_compose(
     judge_ollama_model,
     agent_model,
     ollama_host,
+    proxy=None,
     output_file="docker-compose.yml",
 ):
     # We only format the image names. Env vars are handled by docker compose reading .env
+    if proxy:
+        proxy_env = (
+            f"      - http_proxy={proxy}\n"
+            f"      - https_proxy={proxy}\n"
+            f"      - no_proxy=purple-agent,green-agent,localhost,127.0.0.1\n"
+            f"      - NO_PROXY=purple-agent,green-agent,localhost,127.0.0.1\n"
+        )
+    else:
+        proxy_env = ""
     content = TEMPLATE.format(
-        green_image=green_image, 
+        green_image=green_image,
         purple_image=purple_image,
         judge_provider=judge_provider,
         judge_openai_model=judge_openai_model,
         judge_ollama_model=judge_ollama_model,
         agent_model=agent_model,
         ollama_host=ollama_host,
+        proxy_env=proxy_env,
     )
     with open(output_file, "w") as f:
         f.write(content)
@@ -203,7 +214,7 @@ def main():
     parser = argparse.ArgumentParser(description="Reproduce the benchmark locally using Docker Compose.")
     parser.add_argument("--green-image", default="ghcr.io/hrzhao76/hepex-analysisops-benchmark:latest", help="Green agent image")
     parser.add_argument("--purple-image", default="ghcr.io/hrzhao76/hepex-analysisops-agents:latest", help="Purple agent image")
-    parser.add_argument("--local", action="store_true", help="Use local images (hepex-green-agent:local / hepex-purple-agent:local)")
+    parser.add_argument("--local", action="store_true", help="Use local images (hepex-green-agent-local:v1.1 / hepex-purple-agent-local:v1.1)")
     parser.add_argument("--detach", "-d", action="store_true", help="Run in detached mode (don't stream logs)")
     parser.add_argument("--task-dir", default="tasks_public/t002_hyy_v5_l1", help="Task directory to evaluate")
     parser.add_argument(
@@ -226,6 +237,11 @@ def main():
         "--no-persist-payloads",
         action="store_true",
         help="Do not persist eval_request / purple request / purple response payloads into the run directory.",
+    )
+    parser.add_argument(
+        "--proxy",
+        default=None,
+        help="HTTP/HTTPS proxy URL to inject into containers (e.g. https://127.0.0.1:7890).",
     )
     
     args = parser.parse_args()
@@ -276,6 +292,7 @@ def main():
         judge_ollama_model=judge_ollama_model,
         agent_model=agent_model,
         ollama_host=args.ollama_host,
+        proxy=args.proxy,
     )
     print(
         f"Configured local run with provider={judge_provider}, "
