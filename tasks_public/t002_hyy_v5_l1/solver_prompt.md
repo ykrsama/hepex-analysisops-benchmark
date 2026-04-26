@@ -44,12 +44,17 @@ Do NOT search for alternative pairings.
 Apply ALL cuts exactly (cut_id and criteria):
 
 - `at_least_two_photons`: photon_count >= 2
-- `leading/subleading_photon_tight_id`: (leading photon tight ID == true) and (subleading photon tight ID == true)
-- `leading/subleading_photon_pt`: (leading photon pt > 50 GeV) and (subleading photon pt > 30 GeV)
-- `leading/subleading_photon_isolation`: isolation ratio < 0.055
-- `leading/subleading_photon_eta_transition_veto`: eta transition veto [1.37, 1.52]
+- `leading_photon_tight_id`: leading photon tight ID == true
+- `subleading_photon_tight_id`: subleading photon tight ID == true
+- `leading_photon_pt`: leading photon pt > 50 GeV
+- `subleading_photon_pt`: subleading photon pt > 30 GeV
+- `leading_photon_isolation`: leading photon isolation ratio < 0.055
+- `subleading_photon_isolation`: subleading photon isolation ratio < 0.055
+- `leading_photon_eta_transition_veto`: abs(leading photon eta) not in [1.37, 1.52]
+- `subleading_photon_eta_transition_veto`: abs(subleading photon eta) not in [1.37, 1.52]
 - `diphoton_mass_nonzero`: m_yy != 0
-- `leading/subleading_photon_pt_over_m_yy`: pt / m_yy > 0.35 (both photons)
+- `leading_photon_pt_over_m_yy`: pt / m_yy > 0.35
+- `subleading_photon_pt_over_m_yy`: pt / m_yy > 0.25
 
 Do NOT modify cut_id, thresholds or logic.
 
